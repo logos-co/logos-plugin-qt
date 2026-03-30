@@ -56,6 +56,10 @@
 
     inherit src;
 
+    # Qt embeds plugin metadata in a special section (.note.qt.metadata on ELF,
+    # __TEXT,__qt_pluginmeta on Mach-O). Stripping can remove it on macOS.
+    dontStrip = true;
+
     preConfigure = ''
       runHook prePreConfigure
 
