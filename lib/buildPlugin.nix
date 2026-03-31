@@ -42,6 +42,10 @@
         if [ -f "${libInfo}" ]; then
           cp "${libInfo}" lib/ 2>/dev/null || true
         fi
+        if [ -d "${libInfo}/include" ]; then
+          echo "Copying headers from ${extLib.name}..."
+          cp -r "${libInfo}/include"/* lib/ 2>/dev/null || true
+        fi
       '' else if extLib ? vendor_path then ''
         echo "Staging vendor library ${extLib.name} from ${extLib.vendor_path}..."
         mkdir -p lib
