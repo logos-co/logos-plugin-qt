@@ -63,6 +63,9 @@
     preConfigure = ''
       runHook prePreConfigure
 
+      # Remember source dir — cmake's out-of-tree build will cd into build/
+      export LOGOS_MODULE_SOURCE_DIR="$(pwd)"
+
       # Create generated_code directory for generated files
       mkdir -p ./generated_code
 
@@ -127,13 +130,16 @@
         exit 1
       fi
 
-      # Copy any external libraries from build directory (platform-specific only)
+      # Copy external libraries staged by externalLibCopies during preConfigure.
+      # CMake's out-of-tree build (cd build/) means CWD != source dir, so use
+      # the path saved earlier.
       echo "Platform library extension: ${libExt}"
-      if [ -d lib ]; then
-        echo "Checking build lib/ directory..."
-        for libfile in lib/*; do
+      _ext_lib_dir="''${LOGOS_MODULE_SOURCE_DIR:-$(pwd)}/lib"
+      if [ -d "$_ext_lib_dir" ]; then
+        echo "Checking $_ext_lib_dir for external libraries..."
+        for libfile in "$_ext_lib_dir"/*; do
           if [ -f "$libfile" ] && [[ "$libfile" == *.${libExt} ]]; then
-            echo "Copying build library: $(basename $libfile)"
+            echo "Copying external library: $(basename $libfile)"
             cp "$libfile" $out/lib/
           fi
         done
