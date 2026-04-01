@@ -1,16 +1,16 @@
 # Logos Qt Plugin Backend
 #
-# This module exports the backend interface that logos-module-builder uses
-# to build Qt 6 plugins. It encapsulates all Qt-specific build logic:
-# CMake configuration, Qt dependencies, code generation, and header generation.
+# Builds Logos modules as Qt 6 plugins. Encapsulates Qt-specific build logic:
+# CMake configuration, Qt dependencies, plugin compilation, and macOS fixups.
 #
-# Backend interface:
-#   buildPlugin   — compile sources + metadata → Qt plugin .so/.dylib
-#   buildHeaders  — introspect compiled plugin → SDK headers for consumers
-#   devShellInputs — Qt-specific dev shell dependencies
-#   common        — Qt-specific utilities (deps, cmake flags, platform helpers)
+# This backend does NOT know about logos-cpp-sdk. It only knows about:
+# - Qt (cmake, ninja, qtbase, qtremoteobjects)
+# - logosModule (interface.h — the plugin interface contract)
 #
-{ nixpkgs, logos-cpp-sdk, logos-module, lib, backendRoot }:
+# The logos-cpp-sdk (generator, SDK lib, headers) is added by the caller
+# (logos-module-builder) via extraNativeBuildInputs / extraBuildInputs / env.
+#
+{ nixpkgs, lib, backendRoot }:
 
 let
   common = import ./common.nix { inherit lib; };
@@ -19,52 +19,56 @@ let
 
 in {
   # Build a Qt plugin from sources.
-  # Returns: derivation with lib/{name}_plugin.so and include/ (general SDK headers)
+  # logosModule provides interface.h. Everything else (SDK, generator) comes
+  # via extraNativeBuildInputs/extraBuildInputs passed by the caller.
+  # Returns: derivation with lib/{name}_plugin.so
   buildPlugin = {
     pkgs,
     src,
     config,
+    logosModule,
     moduleDeps ? {},
     externalLibs ? {},
     extraNativeBuildInputs ? [],
     extraBuildInputs ? [],
+    extraCmakeFlags ? [],
+    extraEnv ? {},
     preConfigure ? "",
     postInstall ? "",
   }:
   let
-    logosSdk = logos-cpp-sdk.packages.${pkgs.system}.default;
-    logosModule = logos-module.packages.${pkgs.system}.default;
     commonArgs = {
       pname = "logos-${config.name}-module";
       version = config.version;
-      nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ [ logosSdk ] ++ extraNativeBuildInputs;
+      nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
       buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
-      cmakeFlags = common.commonCmakeFlags { inherit logosSdk logosModule; };
+      cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
       env = {
-        LOGOS_CPP_SDK_ROOT = "${logosSdk}";
         LOGOS_MODULE_ROOT = "${logosModule}";
-        # Keep LOGOS_MODULE_BUILDER_ROOT for backward compatibility with existing CMakeLists.txt
         LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
-      };
+      } // extraEnv;
       meta = with lib; {
         description = config.description;
         platforms = platforms.unix;
       };
     };
   in mkBuildPlugin.build {
-    inherit pkgs src config commonArgs logosSdk moduleDeps externalLibs preConfigure postInstall;
+    inherit pkgs src config commonArgs moduleDeps externalLibs preConfigure postInstall;
+    logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
   };
 
   # Generate SDK headers from a compiled plugin.
-  # Returns: derivation with include/*.h (module-specific API headers for consumers)
+  # This is a thin wrapper — the actual generator binary and SDK package
+  # are passed in by the caller.
+  # Returns: derivation with include/*.h
   buildHeaders = {
     pkgs,
     src,
     config,
     pluginLib,
+    logosSdk,
   }:
   let
-    logosSdk = logos-cpp-sdk.packages.${pkgs.system}.default;
     commonArgs = {
       pname = "logos-${config.name}-module";
       version = config.version;
@@ -78,18 +82,15 @@ in {
     lib = pluginLib;
   };
 
-  # Dev shell dependencies for modules using this backend.
-  # Returns: { nativeBuildInputs, buildInputs, shellHook }
-  devShellInputs = pkgs:
-  let
-    logosSdk = logos-cpp-sdk.packages.${pkgs.system}.default;
-    logosModule = logos-module.packages.${pkgs.system}.default;
-  in {
+  # Dev shell dependencies — Qt only.
+  # SDK env vars are added by the caller (logos-module-builder).
+  devShellInputs = pkgs: {
+    logosModule ? null,
+  }: {
     nativeBuildInputs = common.commonNativeBuildInputs pkgs;
     buildInputs = common.commonBuildInputs pkgs;
     shellHook = ''
-      export LOGOS_CPP_SDK_ROOT="${logosSdk}"
-      export LOGOS_MODULE_ROOT="${logosModule}"
+      ${if logosModule != null then ''export LOGOS_MODULE_ROOT="${logosModule}"'' else ""}
       export LOGOS_MODULE_BUILDER_ROOT="${backendRoot}"
     '';
   };

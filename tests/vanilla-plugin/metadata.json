@@ -1,0 +1,9 @@
+{
+  "name": "vanilla_test",
+  "version": "1.0.0",
+  "description": "Vanilla Qt plugin for testing the backend",
+  "type": "core",
+  "category": "test",
+  "main": "vanilla_test_plugin",
+  "dependencies": []
+}

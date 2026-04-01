@@ -1,4 +1,8 @@
 # Qt-specific utilities for building Logos plugins
+#
+# This module only knows about Qt. It does NOT reference logos-cpp-sdk.
+# The logosModule dependency (interface.h) is the only Logos-specific dep,
+# and it's passed in by the caller.
 { lib }:
 
 {
@@ -29,10 +33,11 @@
     pkgs.qt6.qtremoteobjects
   ];
 
-  # CMake flags for Qt plugin builds
-  commonCmakeFlags = { logosSdk, logosModule }: [
+  # CMake flags for Qt plugin builds.
+  # Only includes logosModule (for interface.h).
+  # SDK flags are added by the builder layer, not here.
+  commonCmakeFlags = { logosModule }: [
     "-GNinja"
-    "-DLOGOS_CPP_SDK_ROOT=${logosSdk}"
     "-DLOGOS_MODULE_ROOT=${logosModule}"
   ];
 
