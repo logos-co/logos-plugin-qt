@@ -61,6 +61,11 @@
           inherit pkgs;
           backendCommon = rawLib.common;
         };
+        # Build a replica factory plugin from a .rep file
+        rep-file-plugin = import ./tests/test-rep-file-plugin.nix {
+          inherit pkgs;
+          backendCommon = rawLib.common;
+        };
       });
 
       # Dev shell for working on the backend itself

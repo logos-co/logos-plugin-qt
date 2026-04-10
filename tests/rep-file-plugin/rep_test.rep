@@ -1,0 +1,4 @@
+class RepTest {
+    PROP(QString status)
+    SLOT(void ping())
+}
