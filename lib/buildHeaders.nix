@@ -25,6 +25,15 @@
     # We need the generator and the built plugin
     nativeBuildInputs = [ logosSdk ];
 
+    # logosSdk transitively pulls qtbase into the closure, which trips
+    # nixpkgs' qtPreHook (it expects every derivation that depends on
+    # qtbase to declare a wrapping behavior). The headers package
+    # produces a plain header tree — no executables, no Qt apps to
+    # wrap — so opt out explicitly. Without this, the qtPreHook
+    # aborts the build with "this derivation depends on qtbase, but
+    # no wrapping behavior was specified."
+    dontWrapQtApps = true;
+
     # No configure phase needed
     dontConfigure = true;
 
