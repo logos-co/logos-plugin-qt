@@ -22,8 +22,18 @@
     inherit src;
     inherit (commonArgs) meta;
 
-    # We need the generator and the built plugin
+    # We need the generator and the built plugin. logosSdk's
+    # `propagatedBuildInputs` only ships OpenSSL / Boost /
+    # nlohmann_json — Qt is intentionally excluded (see
+    # logos-cpp-sdk/nix/default.nix) so qtbase isn't dragged into our
+    # closure here, qtPreHook doesn't fire, and we don't need
+    # `wrapQtAppsNoGuiHook` either: the generator binary at
+    # `${logosSdk}/bin/logos-cpp-generator` was already wrapped at
+    # SDK build time. `dontWrapQtApps = true` is kept as a belt-and-
+    # suspenders no-op in case a future change re-introduces qtbase.
     nativeBuildInputs = [ logosSdk ];
+
+    dontWrapQtApps = true;
 
     # No configure phase needed
     dontConfigure = true;
