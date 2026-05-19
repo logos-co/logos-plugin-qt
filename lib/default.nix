@@ -58,8 +58,11 @@ in {
   };
 
   # Generate SDK headers from a compiled plugin.
-  # This is a thin wrapper — the actual generator binary and SDK package
-  # are passed in by the caller.
+  # `apiStyle` picks which type surface the generated `<Module>` client
+  # wrapper exposes ("qt" or "std"); each module is built once per
+  # style so downstream consumers can pick the variant matching their
+  # own --api-style without re-running the codegen. Default is "qt"
+  # — historically the only option, kept for backward compat.
   # Returns: derivation with include/*.h
   buildHeaders = {
     pkgs,
@@ -67,6 +70,7 @@ in {
     config,
     pluginLib,
     logosSdk,
+    apiStyle ? "qt",
   }:
   let
     commonArgs = {
@@ -78,7 +82,7 @@ in {
       };
     };
   in mkBuildHeaders.build {
-    inherit pkgs src config commonArgs logosSdk;
+    inherit pkgs src config commonArgs logosSdk apiStyle;
     lib = pluginLib;
   };
 

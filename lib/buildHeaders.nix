@@ -10,13 +10,22 @@
     commonArgs,
     logosSdk,
     lib,  # The built module library (plugin derivation)
+    # API style for the generated `<Module>` client wrapper:
+    #   "qt"  — QString / QStringList / QVariantList / QVariantMap / int / LogosResult
+    #   "std" — std::string / std::vector<std::string> / LogosMap / LogosList /
+    #           int64_t / StdLogosResult (Qt↔std conversion inlined in the .cpp)
+    # Each module is built TWICE (once per style) so consumers can pick the
+    # variant matching their own --api-style without re-running the codegen
+    # at consume time — the two variants are independent derivations and
+    # Nix only realises the ones a downstream actually depends on.
+    apiStyle ? "qt",
   }:
   let
     pluginFilename = common.getPluginFilename pkgs config.name;
     libExt = common.getLibExtension pkgs;
 
   in pkgs.stdenv.mkDerivation {
-    pname = "${commonArgs.pname}-headers";
+    pname = "${commonArgs.pname}-headers-${apiStyle}";
     version = commonArgs.version;
 
     inherit src;
@@ -69,7 +78,19 @@
       echo "Library path: ${lib}/lib"
       ls -la "${lib}/lib" 2>/dev/null || echo "No lib directory"
 
-      logos-cpp-generator "$PLUGIN_FILE" --output-dir ./generated_headers --module-only || {
+      # --events-from: typed `on<EventName>(callback)` accessors on the
+      # generated wrapper come from the dep's LIDL sidecar (emitted by
+      # buildPlugin.nix's installPhase from `logos_events:` blocks in
+      # the impl header). Absent for handcrafted Qt modules — that's
+      # fine, we skip the flag in that case.
+      EVENTS_FROM_FLAG=""
+      if [ -f "${lib}/share/logos/${config.name}.lidl" ]; then
+        EVENTS_FROM_FLAG="--events-from ${lib}/share/logos/${config.name}.lidl"
+        echo "Using events sidecar: ${lib}/share/logos/${config.name}.lidl"
+      fi
+
+      logos-cpp-generator "$PLUGIN_FILE" --output-dir ./generated_headers \
+        --module-only --api-style ${apiStyle} $EVENTS_FROM_FLAG || {
         echo "Warning: logos-cpp-generator failed, this may be expected if the module has no public API"
         # Create a marker file to indicate attempt was made
         touch ./generated_headers/.no-api
