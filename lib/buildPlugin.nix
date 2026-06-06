@@ -19,7 +19,7 @@
   let
     pluginFilename = common.getPluginFilename pkgs config.name;
     libExt = common.getLibExtension pkgs;
-    staticDepNames = map (e: e.name) staticDeps;
+    staticDepNames = builtins.map (e: e.name) staticDeps;
 
     # Pick the API style up-front from this module's `interface`. Each
     # dep already ships pre-built header variants (`.headers-qt` and
