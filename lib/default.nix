@@ -29,6 +29,7 @@ in {
     logosModule,
     moduleDeps ? {},
     interfaceDeps ? [],
+    staticDeps ? [],
     externalLibs ? {},
     extraNativeBuildInputs ? [],
     extraBuildInputs ? [],
@@ -54,7 +55,7 @@ in {
       };
     };
   in mkBuildPlugin.build {
-    inherit pkgs src config commonArgs moduleDeps interfaceDeps externalLibs preConfigure postInstall;
+    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall;
     logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
   };
 
