@@ -323,6 +323,17 @@ function(logos_module)
         endif()
     endif()
 
+    # Universal UI backends (type: ui_qml + interface: universal): the
+    # generated glue plugin — derived from the impl class by
+    # logos-qt-generator, carrying Q_PLUGIN_METADATA and the initLogos
+    # wiring — must be compiled into the target (the .h rides along so
+    # AUTOMOC picks up the plugin metadata).
+    if(EXISTS "${PLUGINS_OUTPUT_DIR}/${MODULE_NAME}_ui_glue.cpp")
+        list(APPEND PLUGIN_SOURCES
+            ${PLUGINS_OUTPUT_DIR}/${MODULE_NAME}_ui_glue.cpp
+            ${PLUGINS_OUTPUT_DIR}/${MODULE_NAME}_ui_glue.h)
+    endif()
+
     # Provider-header code generation (new LogosProviderBase API)
     if(MODULE_PROVIDER_HEADER)
         set(_PROVIDER_HEADER_ABS "${CMAKE_CURRENT_SOURCE_DIR}/${MODULE_PROVIDER_HEADER}")
