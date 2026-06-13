@@ -25,12 +25,15 @@
     # dep already ships pre-built header variants (`.headers-qt` and
     # `.headers-std` — see mkLogosModule.nix's `buildHeaders` calls),
     # so we just copy from the right one. No codegen at consume time.
-    # cdylib modules get the Qt-free outbound surface: the generated
-    # LogosModules umbrella + dep wrappers call the logos-protocol C ABI
-    # (lp_*) directly, so the module's own TUs never include Qt. universal
-    # modules keep the std surface (Qt bridged inside the generated .cpp);
-    # everything else stays Qt-typed.
+    # cdylib AND core universal modules get the Qt-free outbound surface: the
+    # generated LogosModules umbrella + dep wrappers call the logos-protocol C
+    # ABI (lp_*) directly, so the module's own TUs never include Qt (universal
+    # is now a header-first cdylib — see modulePreConfigure.universalCodegen).
+    # UI universal backends (type: ui_qml) inherently derive a Qt SimpleSource,
+    # so they stay on the std surface (Qt bridged inside the generated .cpp);
+    # everything else (legacy / handcrafted Qt) stays Qt-typed.
     apiStyle = if config.interface == "cdylib" then "lp"
+               else if config.interface == "universal" && (config.type or "core") != "ui_qml" then "lp"
                else if config.interface == "universal" then "std"
                else "qt";
 
