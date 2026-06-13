@@ -25,7 +25,14 @@
     # dep already ships pre-built header variants (`.headers-qt` and
     # `.headers-std` — see mkLogosModule.nix's `buildHeaders` calls),
     # so we just copy from the right one. No codegen at consume time.
-    apiStyle = if config.interface == "universal" then "std" else "qt";
+    # cdylib modules get the Qt-free outbound surface: the generated
+    # LogosModules umbrella + dep wrappers call the logos-protocol C ABI
+    # (lp_*) directly, so the module's own TUs never include Qt. universal
+    # modules keep the std surface (Qt bridged inside the generated .cpp);
+    # everything else stays Qt-typed.
+    apiStyle = if config.interface == "cdylib" then "lp"
+               else if config.interface == "universal" then "std"
+               else "qt";
 
     # TRANSITIONAL: header-copy fallback for dependencies that don't publish a
     # LIDL contract yet (mkLogosModule only puts such deps in `moduleDeps`).
