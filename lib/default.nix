@@ -59,6 +59,48 @@ in {
     logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
   };
 
+  # Generate-only: run the same code generators as buildPlugin but emit a
+  # ready-to-build source tree (module source + generated_code/) instead of a
+  # compiled plugin. Same args as buildPlugin so the caller (logos-module-builder)
+  # can pass the identical inputs and get a tree that matches a real build.
+  # Returns: derivation whose $out is the snapshotted source tree.
+  generate = {
+    pkgs,
+    src,
+    config,
+    logosModule,
+    moduleDeps ? {},
+    interfaceDeps ? [],
+    staticDeps ? [],
+    externalLibs ? {},
+    extraNativeBuildInputs ? [],
+    extraBuildInputs ? [],
+    extraCmakeFlags ? [],
+    extraEnv ? {},
+    preConfigure ? "",
+    postInstall ? "",
+  }:
+  let
+    commonArgs = {
+      pname = "logos-${config.name}-module";
+      version = config.version;
+      nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
+      buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
+      cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      env = {
+        LOGOS_MODULE_ROOT = "${logosModule}";
+        LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
+      } // extraEnv;
+      meta = with lib; {
+        description = config.description;
+        platforms = platforms.unix;
+      };
+    };
+  in mkBuildPlugin.generate {
+    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall;
+    logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
+  };
+
   # Generate SDK headers from a compiled plugin.
   # `apiStyle` picks which type surface the generated `<Module>` client
   # wrapper exposes ("qt" or "std"); each module is built once per

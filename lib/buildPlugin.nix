@@ -2,19 +2,26 @@
 # This is the Qt-specific implementation of the plugin build step.
 { lib, common }:
 
-{
-  build = {
+let
+  # Shared generation logic for `build` and `generate`.
+  #
+  # Produces the shell snippet that runs every code generator that is part of a
+  # module's build — `logos-cpp-generator --general-only` (+ dependency/interface
+  # wrappers) and the module-builder-level `${preConfigure}` (LIDL, Qt glue,
+  # C-ABI dispatch, UI plugin glue) — leaving a fully-populated `generated_code/`
+  # in the (source) working directory. `build` runs it from `preConfigure` and
+  # then compiles; `generate` runs the very same snippet and snapshots the tree
+  # instead of compiling, so the emitted source is guaranteed identical to what a
+  # real build generates.
+  mkGeneration = {
     pkgs,
     src,
     config,
-    commonArgs,
-    logosSdk,
     moduleDeps ? {},
     interfaceDeps ? [],
     staticDeps ? [],
     externalLibs ? {},
     preConfigure ? "",
-    postInstall ? "",
   }:
   let
     pluginFilename = common.getPluginFilename pkgs config.name;
@@ -105,18 +112,10 @@
       '' else ""
     ) config.external_libraries;
 
-  in pkgs.stdenv.mkDerivation (commonArgs // {
-    pname = "${commonArgs.pname}-lib";
-
-    inherit src;
-
-    # Qt embeds plugin metadata in a special section (.note.qt.metadata on ELF,
-    # __TEXT,__qt_pluginmeta on Mach-O). Stripping can remove it on macOS.
-    dontStrip = true;
-
-    preConfigure = ''
-      runHook prePreConfigure
-
+    # The full generation snippet. Runs in the (source) working directory and
+    # writes generated_code/ + stages external libs into lib/. Shared verbatim
+    # by `build` (compiles afterwards) and `generate` (snapshots afterwards).
+    generationScript = ''
       # Remember source dir — cmake's out-of-tree build will cd into build/
       export LOGOS_MODULE_SOURCE_DIR="$(pwd)"
 
@@ -172,6 +171,44 @@
 
       # Run any custom preConfigure hook
       ${preConfigure}
+    '';
+  in {
+    inherit generationScript libExt pluginFilename apiStyle;
+  };
+
+in {
+  build = {
+    pkgs,
+    src,
+    config,
+    commonArgs,
+    logosSdk,
+    moduleDeps ? {},
+    interfaceDeps ? [],
+    staticDeps ? [],
+    externalLibs ? {},
+    preConfigure ? "",
+    postInstall ? "",
+  }:
+  let
+    gen = mkGeneration {
+      inherit pkgs src config moduleDeps interfaceDeps staticDeps externalLibs preConfigure;
+    };
+    libExt = gen.libExt;
+
+  in pkgs.stdenv.mkDerivation (commonArgs // {
+    pname = "${commonArgs.pname}-lib";
+
+    inherit src;
+
+    # Qt embeds plugin metadata in a special section (.note.qt.metadata on ELF,
+    # __TEXT,__qt_pluginmeta on Mach-O). Stripping can remove it on macOS.
+    dontStrip = true;
+
+    preConfigure = ''
+      runHook prePreConfigure
+
+      ${gen.generationScript}
 
       runHook postPreConfigure
     '';
@@ -296,6 +333,63 @@
       fi
 
       # Run any custom postInstall hook
+      ${postInstall}
+
+      runHook postInstall
+    '';
+  });
+
+  # Generate-only build: run the exact same code generators as `build` (via the
+  # shared generationScript) but snapshot the resulting source tree instead of
+  # compiling it. The output ($out) is a ready-to-build codebase — the module
+  # source plus a fully-populated generated_code/ (and any staged lib/) — which
+  # cmake compiles without re-running any generator (installed-layout path in
+  # LogosModule.cmake). Build it from the module's `nix develop` shell, which
+  # exports LOGOS_*_ROOT.
+  generate = {
+    pkgs,
+    src,
+    config,
+    commonArgs,
+    logosSdk,
+    moduleDeps ? {},
+    interfaceDeps ? [],
+    staticDeps ? [],
+    externalLibs ? {},
+    preConfigure ? "",
+    postInstall ? "",
+  }:
+  let
+    gen = mkGeneration {
+      inherit pkgs src config moduleDeps interfaceDeps staticDeps externalLibs preConfigure;
+    };
+
+  in pkgs.stdenv.mkDerivation (commonArgs // {
+    pname = "${commonArgs.pname}-generated";
+
+    inherit src;
+
+    # No cmake configure, no compile, no ELF/dylib fixup — we only run the
+    # generators and snapshot the tree.
+    dontConfigure = true;
+    dontFixup = true;
+
+    buildPhase = ''
+      runHook preBuild
+
+      ${gen.generationScript}
+
+      runHook postBuild
+    '';
+
+    installPhase = ''
+      runHook preInstall
+
+      # Snapshot the post-generation source tree: module sources + the just
+      # generated generated_code/ + any external libs staged into lib/.
+      mkdir -p "$out"
+      cp -a . "$out/"
+
       ${postInstall}
 
       runHook postInstall
