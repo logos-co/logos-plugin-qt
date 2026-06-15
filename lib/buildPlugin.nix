@@ -36,12 +36,13 @@ let
     # generated LogosModules umbrella + dep wrappers call the logos-protocol C
     # ABI (lp_*) directly, so the module's own TUs never include Qt (universal
     # is now a header-first cdylib — see modulePreConfigure.universalCodegen).
-    # UI universal backends (type: ui_qml) inherently derive a Qt SimpleSource,
-    # so they stay on the std surface (Qt bridged inside the generated .cpp);
-    # everything else (legacy / handcrafted Qt) stays Qt-typed.
+    # UI universal backends (type: ui_qml) are NOT modules — they derive a Qt
+    # SimpleSource whose .rep slots are Qt-typed, so they get the Qt surface
+    # too: their LogosUiPluginContext.modules() dep wrappers come out Qt-typed,
+    # matching the view, with no std<->Qt conversions at the boundary.
+    # Everything else (legacy / handcrafted Qt) is Qt-typed as well.
     apiStyle = if config.interface == "cdylib" then "lp"
                else if config.interface == "universal" && (config.type or "core") != "ui_qml" then "lp"
-               else if config.interface == "universal" then "std"
                else "qt";
 
     # TRANSITIONAL: header-copy fallback for dependencies that don't publish a
