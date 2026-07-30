@@ -30,7 +30,7 @@ let
 
     # Pick the API style up-front from this module's `interface`. Each
     # dep already ships pre-built header variants (`.headers-qt` and
-    # `.headers-std` — see mkLogosModule.nix's `buildHeaders` calls),
+    # `.headers-lp` — see mkLogosModule.nix's `buildHeaders` calls),
     # so we just copy from the right one. No codegen at consume time.
     # cdylib AND core universal modules get the Qt-free outbound surface: the
     # generated LogosModules umbrella + dep wrappers call the logos-protocol C

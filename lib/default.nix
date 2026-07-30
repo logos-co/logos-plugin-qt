@@ -103,7 +103,7 @@ in {
 
   # Generate SDK headers from a compiled plugin.
   # `apiStyle` picks which type surface the generated `<Module>` client
-  # wrapper exposes ("qt" or "std"); each module is built once per
+  # wrapper exposes ("qt" or "lp"); each module is built once per
   # style so downstream consumers can pick the variant matching their
   # own --api-style without re-running the codegen. Default is "qt"
   # — historically the only option, kept for backward compat.
