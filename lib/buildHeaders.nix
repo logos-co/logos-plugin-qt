@@ -11,13 +11,14 @@
     logosSdk,
     lib,  # The built module library (plugin derivation)
     # API style for the generated `<Module>` client wrapper:
-    #   "qt"  — QString / QStringList / QVariantList / QVariantMap / int / LogosResult
-    #   "std" — std::string / std::vector<std::string> / LogosMap / LogosList /
-    #           int64_t / StdLogosResult (Qt↔std conversion inlined in the .cpp)
-    # Each module is built TWICE (once per style) so consumers can pick the
-    # variant matching their own --api-style without re-running the codegen
-    # at consume time — the two variants are independent derivations and
-    # Nix only realises the ones a downstream actually depends on.
+    #   "qt" — QString / QStringList / QVariantList / QVariantMap / int / LogosResult
+    #   "lp" — std-typed and Qt-FREE: the wrapper talks the logos-protocol C ABI
+    #          (lp_*) directly, so a core universal / cdylib consumer can include
+    #          it from a translation unit that never sees Qt.
+    # Each module is built once per style so consumers can pick the variant
+    # matching their own --api-style without re-running the codegen at consume
+    # time — the variants are independent derivations and Nix only realises the
+    # ones a downstream actually depends on.
     apiStyle ? "qt",
   }:
   let
