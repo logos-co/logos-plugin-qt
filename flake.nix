@@ -66,6 +66,11 @@
           inherit pkgs;
           backendCommon = rawLib.common;
         };
+        # A failing logos-cpp-generator must fail the headers build; a module
+        # with no public API must not.
+        header-generator-guard = import ./tests/test-header-generator-guard.nix {
+          inherit pkgs;
+        };
       });
 
       # Dev shell for working on the backend itself
