@@ -32,7 +32,12 @@ pkgs.runCommand "logos-plugin-qt-header-generator-guard-test" {
   make_stub() {
     local dir="$work/bin-$1"
     mkdir -p "$dir"
-    printf '#!/usr/bin/env bash\n%s\n' "$2" > "$dir/logos-cpp-generator"
+    # ${pkgs.bash}/bin/bash, NOT /usr/bin/env: the nix build sandbox has no
+    # /usr/bin/env, so an env shebang makes every stub exit 126 ("bad
+    # interpreter") before it can record anything. The guard under test then
+    # reports a generator failure — a true statement about a broken stub, which
+    # is exactly how this test failed in CI while passing outside the sandbox.
+    printf '#!${pkgs.bash}/bin/bash\n%s\n' "$2" > "$dir/logos-cpp-generator"
     chmod +x "$dir/logos-cpp-generator"
     echo "$dir"
   }
