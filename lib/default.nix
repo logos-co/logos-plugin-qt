@@ -51,7 +51,7 @@ in {
       } // extraEnv;
       meta = with lib; {
         description = config.description;
-        platforms = platforms.unix;
+        platforms = platforms.unix ++ platforms.windows;
       };
     };
   in mkBuildPlugin.build {
@@ -93,7 +93,7 @@ in {
       } // extraEnv;
       meta = with lib; {
         description = config.description;
-        platforms = platforms.unix;
+        platforms = platforms.unix ++ platforms.windows;
       };
     };
   in mkBuildPlugin.generate {
@@ -122,7 +122,7 @@ in {
       version = config.version;
       meta = with lib; {
         description = config.description;
-        platforms = platforms.unix;
+        platforms = platforms.unix ++ platforms.windows;
       };
     };
   in mkBuildHeaders.build {
