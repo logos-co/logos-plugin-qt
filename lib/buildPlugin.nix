@@ -198,6 +198,13 @@ in {
     libExt = gen.libExt;
 
   in pkgs.stdenv.mkDerivation (commonArgs // {
+    # Required wherever the Qt wrapper hooks are absent (Windows -- see
+    # common.nix): qtbase's setup hook hard-errors in qtPreHook with
+    # "depends on qtbase, but no wrapping behavior was specified" unless one of
+    # the two is present. Harmless elsewhere: these are plugins, not
+    # applications, so there is nothing to wrap.
+    dontWrapQtApps = true;
+
     pname = "${commonArgs.pname}-lib";
 
     inherit src;
@@ -366,6 +373,13 @@ in {
     };
 
   in pkgs.stdenv.mkDerivation (commonArgs // {
+    # Required wherever the Qt wrapper hooks are absent (Windows -- see
+    # common.nix): qtbase's setup hook hard-errors in qtPreHook with
+    # "depends on qtbase, but no wrapping behavior was specified" unless one of
+    # the two is present. Harmless elsewhere: these are plugins, not
+    # applications, so there is nothing to wrap.
+    dontWrapQtApps = true;
+
     pname = "${commonArgs.pname}-generated";
 
     inherit src;
