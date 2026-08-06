@@ -1,5 +1,25 @@
-# Builder for module headers (generated from the built Qt plugin)
-# Uses logos-cpp-generator to introspect the compiled plugin and produce SDK headers.
+# Builder for module headers.
+#
+# Two code paths, picked by the HOST platform:
+#
+#   native  — introspect the compiled plugin (logos-cpp-generator <plugin.so>
+#             --module-only). Unchanged, and still the default everywhere the
+#             builder can actually dlopen what it just built.
+#
+#   cross   — generate from the module's LIDL CONTRACT instead
+#             (--metadata <stub> --general-only --dep <name>=<file.lidl>).
+#             A Linux builder cannot load a Windows PE, so introspection is
+#             impossible under x86_64-w64-mingw32 and the probe below would
+#             always fail. The contract carries the same information the
+#             introspector would have recovered from the plugin's Qt
+#             metaobject, so the emitted <name>_api.{h,cpp} are equivalent.
+#
+# The cross path deliberately does NOT fail soft. The native path ends in
+# `|| { ... touch .no-api; }`, which is survivable there because the plugin was
+# genuinely loadable and an empty API means the module really has none. Under
+# cross the same fallback would turn "we cannot introspect a PE" into a green
+# build that silently ships a module with no typed API, so every failure mode
+# on the cross path is a hard `exit 1` naming the module.
 { lib, common }:
 
 {
@@ -20,10 +40,82 @@
     # time — the variants are independent derivations and Nix only realises the
     # ones a downstream actually depends on.
     apiStyle ? "qt",
+    # Absolute path (store path) of this module's LIDL contract, or null when
+    # the module publishes none. Only consulted when the plugin cannot be
+    # introspected (cross-compilation); ignored on native builds so they behave
+    # byte-for-byte as before.
+    contractLidl ? null,
   }:
   let
     pluginFilename = common.getPluginFilename pkgs config.name;
     libExt = common.getLibExtension pkgs;
+
+    # A Linux (or Darwin) builder cannot dlopen a Windows PE, so plugin
+    # introspection is structurally impossible here.
+    crossNoIntrospect = pkgs.stdenv.hostPlatform.isWindows;
+
+    # ── cross: LIDL-driven generation ──────────────────────────────────────
+    # `--dep <name>=<file.lidl>` is the generator's existing contract->consumer
+    # backend (BindMode::Static, the same one production consumers already use
+    # via buildPlugin.nix's staticDeps). It only runs inside the `--general-only`
+    # branch of the generator, hence the metadata stub: `--general-only` needs a
+    # metadata.json, but the only thing it takes from it is the umbrella
+    # (logos_sdk.{h,cpp}), which the native --module-only path does not emit and
+    # which we therefore delete again below.
+    crossBuildPhase = ''
+      runHook preBuild
+
+      mkdir -p ./generated_headers
+
+    '' + (if contractLidl == null then ''
+      echo "Error: cannot generate typed headers for module '${config.name}' when cross-compiling to ${pkgs.stdenv.hostPlatform.config}." >&2
+      echo "" >&2
+      echo "  Native builds recover a module's typed API by loading the compiled" >&2
+      echo "  plugin and reading its Qt metaobject. This builder cannot load a" >&2
+      echo "  ${pkgs.stdenv.hostPlatform.config} binary, so the API must come from the module's" >&2
+      echo "  LIDL contract instead — and '${config.name}' publishes none." >&2
+      echo "" >&2
+      echo "  Fix one of:" >&2
+      echo "    * migrate '${config.name}' to interface: \"universal\" (its contract is" >&2
+      echo "      then derived from the impl header automatically), or" >&2
+      echo "    * commit a contract at src/${config.name}.lidl in the module repo." >&2
+      echo "" >&2
+      echo "  Refusing to emit an empty API: a module with no typed surface would" >&2
+      echo "  build green and then be un-callable from every consumer." >&2
+      exit 1
+    '' else ''
+      cat > ./cross_headers_metadata.json <<'EOF'
+      { "name": "${config.name}", "version": "${config.version}", "dependencies": [] }
+      EOF
+
+      echo "Cross build (${pkgs.stdenv.hostPlatform.config}): generating ${apiStyle}-typed headers for '${config.name}' from LIDL contract"
+      echo "  contract: ${contractLidl}"
+
+      # No `|| touch .no-api` here — see the header comment. A generator failure
+      # is fatal.
+      logos-cpp-generator --metadata ./cross_headers_metadata.json \
+        --output-dir ./generated_headers \
+        --general-only --api-style ${apiStyle} \
+        --dep ${config.name}=${contractLidl}
+
+      # The umbrella is a --general-only artifact; the native --module-only path
+      # never emits it and installPhase copies every .h/.cpp, so drop it to keep
+      # the two outputs shaped the same.
+      rm -f ./generated_headers/logos_sdk.h ./generated_headers/logos_sdk.cpp
+
+      # `--dep` is a silent no-op if the generator ever stops honouring it (it is
+      # only read inside the --general-only branch). Assert the wrapper actually
+      # exists rather than letting an empty include/ ship.
+      if [ ! -f "./generated_headers/${config.name}_api.h" ]; then
+        echo "Error: LIDL-driven generation produced no ${config.name}_api.h for module '${config.name}'." >&2
+        echo "Contents of ./generated_headers:" >&2
+        ls -la ./generated_headers >&2
+        exit 1
+      fi
+    '') + ''
+
+      runHook postBuild
+    '';
 
   in pkgs.stdenv.mkDerivation {
     pname = "${commonArgs.pname}-headers-${apiStyle}";
@@ -48,7 +140,7 @@
     # No configure phase needed
     dontConfigure = true;
 
-    buildPhase = ''
+    buildPhase = if crossNoIntrospect then crossBuildPhase else ''
       runHook preBuild
 
       # Create output directory for generated headers
