@@ -360,6 +360,34 @@ in {
 
       runHook postInstall
     '';
+  } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isWindows {
+    # Windows: stage the plugin's transitive DLL closure beside it in $out/lib.
+    #
+    # nixpkgs' win-dll-link.sh hook does exactly this, but its entry point
+    # `_linkDLLs` only ever processes `$prefix/bin` -- a module plugin lives in
+    # $out/lib and is therefore skipped, so it ships as a bare .dll with none of
+    # its dependencies. `linkDLLsInfolder` is that same hook's reusable worker,
+    # so this points the upstream mechanism at the right directory rather than
+    # reimplementing it.
+    #
+    # Two things this fixes at once:
+    #   1. The module directory becomes self-sufficient, which is what makes an
+    #      .lgx payload ($SRC_DRV/lib) complete. Combined with logos-module's
+    #      LOAD_WITH_ALTERED_SEARCH_PATH pre-load, Windows then resolves these
+    #      from the module's own directory at load time.
+    #   2. The Nix closure. A PE embeds no store paths, so the reference scanner
+    #      finds none -- `nix-store -qR` on a cross-built module output returned
+    #      literally 1, itself. These symlinks are what make the real
+    #      dependencies appear, so a cache-substituted module arrives with the
+    #      DLLs it needs instead of silently without them.
+    #
+    # postFixup rather than installPhase so it runs after stripping, and so the
+    # symlinks are the last thing written into $out/lib.
+    postFixup = (commonArgs.postFixup or "") + ''
+      if [ -d "$out/lib" ]; then
+        linkDLLsInfolder "$out/lib"
+      fi
+    '';
   });
 
   # Generate-only build: run the exact same code generators as `build` (via the
