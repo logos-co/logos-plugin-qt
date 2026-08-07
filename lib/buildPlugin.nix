@@ -197,6 +197,16 @@ in {
     };
     libExt = gen.libExt;
 
+    externalLibDrvs = builtins.filter lib.isDerivation (builtins.attrValues externalLibs);
+
+    # The external libraries' full runtime CLOSURES, for the Windows DLL walk.
+    # Adding them to buildInputs is NOT enough: that contributes each library's
+    # own lib/ and bin/, but its dependencies live in THEIR store paths --
+    # libpackage_downloader_lib.dll imports libcurl-4.dll from curl's output,
+    # which no amount of looking inside the package_downloader path will find.
+    # A PE records no store references either, so Nix cannot infer this for us.
+    externalLibClosure = pkgs.pkgsBuildBuild.closureInfo { rootPaths = externalLibDrvs; };
+
   in pkgs.stdenv.mkDerivation (commonArgs // {
     # Required wherever the Qt wrapper hooks are absent (Windows -- see
     # common.nix): qtbase's setup hook hard-errors in qtPreHook with
@@ -383,8 +393,20 @@ in {
     #
     # postFixup rather than installPhase so it runs after stripping, and so the
     # symlinks are the last thing written into $out/lib.
+    buildInputs = (commonArgs.buildInputs or [ ]) ++ externalLibDrvs;
+
     postFixup = (commonArgs.postFixup or "") + ''
       if [ -d "$out/lib" ]; then
+        # Extend the hook's search path with every store path in the external
+        # libraries' closure. Without this the transitive walk stops at the
+        # first dependency it cannot locate and the plugin ships incomplete --
+        # failing at LOAD time with "The specified module could not be found",
+        # which names the plugin rather than the DLL that is actually absent.
+        while read -r _p; do
+          [ -d "$_p/bin" ] && LINK_DLL_FOLDERS="$LINK_DLL_FOLDERS:$_p/bin"
+          [ -d "$_p/lib" ] && LINK_DLL_FOLDERS="$LINK_DLL_FOLDERS:$_p/lib"
+        done < ${externalLibClosure}/store-paths
+        export LINK_DLL_FOLDERS
         linkDLLsInfolder "$out/lib"
       fi
     '';
