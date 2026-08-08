@@ -24,3 +24,6 @@ jobs:
 
       - name: Build vanilla Qt plugin test
         run: nix build '.#checks.x86_64-linux.vanilla-plugin'
+
+      - name: Header generator guard test
+        run: nix build '.#checks.x86_64-linux.header-generator-guard'
