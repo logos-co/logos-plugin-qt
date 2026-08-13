@@ -6,13 +6,19 @@ let
   # Shared generation logic for `build` and `generate`.
   #
   # Produces the shell snippet that runs every code generator that is part of a
-  # module's build — `logos-cpp-generator --general-only` (+ dependency/interface
-  # wrappers) and the module-builder-level `${preConfigure}` (LIDL, Qt glue,
-  # C-ABI dispatch, UI plugin glue) — leaving a fully-populated `generated_code/`
-  # in the (source) working directory. `build` runs it from `preConfigure` and
-  # then compiles; `generate` runs the very same snippet and snapshots the tree
-  # instead of compiling, so the emitted source is guaranteed identical to what a
-  # real build generates.
+  # module's build — the consumer surface (`logos-cpp-generator --general-only`
+  # for the umbrella and the lp wrappers, `logos-qt-generator --backend
+  # consumer` for the Qt-typed ones; see `generatorCalls`) and the
+  # module-builder-level `${preConfigure}` (LIDL, Qt glue, C-ABI dispatch, UI
+  # plugin glue) — leaving a fully-populated `generated_code/` in the (source)
+  # working directory. `build` runs it from `preConfigure` and then compiles;
+  # `generate` runs the very same snippet and snapshots the tree instead of
+  # compiling, so the emitted source is guaranteed identical to what a real
+  # build generates.
+  #
+  # Both generators are put on PATH by the caller (logos-module-builder's
+  # extraNativeBuildInputs), which is also where the SDK comes from — this
+  # backend deliberately knows about neither.
   mkGeneration = {
     pkgs,
     src,
@@ -44,6 +50,7 @@ let
     apiStyle = if config.interface == "cdylib" then "lp"
                else if config.interface == "universal" && (config.type or "core") != "ui_qml" then "lp"
                else "qt";
+    isQt = apiStyle == "qt";
 
     # TRANSITIONAL: header-copy fallback for dependencies that don't publish a
     # LIDL contract yet (mkLogosModule only puts such deps in `moduleDeps`).
@@ -87,6 +94,139 @@ let
         + (lib.optionalString ((e.impl_class or null) != null) ("=" + e.impl_class)))
     ) staticDeps;
 
+    # ── Who emits the qt-style per-dependency wrapper ──────────────────────
+    #
+    # Every dependency and interface that gets a generated consumer wrapper,
+    # with the flavour the wrapper needs. `static` bakes the target module name
+    # into the class (a concrete `dependencies` entry, reached as
+    # `modules().<dep>`); `bound` takes it as a ctor argument (an
+    # `interface_dependencies` entry, reached as `modules().bind_<name>(...)`).
+    # The two lists are disjoint by construction — mkLogosModule refuses a name
+    # that is both — and logos-cpp-generator drops a `--dep` colliding with an
+    # `--interface` for the same reason.
+    consumerSpecs =
+      (map (e: { inherit (e) name path; impl_class = e.impl_class or null; bind = "static"; }) staticDeps)
+      ++ (map (e: { inherit (e) name path; impl_class = e.impl_class or null; bind = "bound"; }) interfaceDeps);
+
+    # One `logos-qt-generator --backend consumer` invocation per spec, emitting
+    # `<name>_api.{h,cpp}` straight into ./generated_code — the same file names,
+    # class names and public signatures logos-cpp-generator's `--api-style qt`
+    # emitter produced, so no call site and no umbrella reference moves.
+    #
+    # `--class` is deliberately NOT passed: the backend defaults it to
+    # lidlToPascalCase(--module), which is character-for-character the
+    # toPascalCase the umbrella uses to spell the member's TYPE (both are the
+    # same routine in logos-cpp-sdk's shared share/lidl-frontend). Passing it
+    # would mean re-implementing that casing in nix and having a second place
+    # for the two spellings to drift apart.
+    #
+    # The generator takes its contract either as LIDL or as the C++ impl header
+    # it was derived from, and the file extension picks which — the same
+    # dispatch logos-cpp-generator's parseInterfaceFile does. A header also
+    # needs a metadata.json, and it must be a SYNTHETIC one carrying only the
+    # name: the parser would otherwise read this CONSUMER's `events` out of its
+    # metadata and hang them on the dependency's wrapper. (logos-cpp-generator
+    # writes the same one-key stub for the same reason.)
+    qtConsumerCalls = lib.concatMapStringsSep "\n" (e:
+      let
+        nameArg = lib.escapeShellArg e.name;
+        pathArg = lib.escapeShellArg e.path;
+        isHeader = lib.hasSuffix ".h" e.path || lib.hasSuffix ".hpp" e.path;
+        # Written only on the header path — the LIDL path needs no metadata.
+        synthMeta = lib.optionalString (isHeader && e.impl_class != null) ''
+          printf '{"name":"%s"}' ${nameArg} > "$_qtgen_scratch/meta.json"
+        '';
+        inputArgs =
+          if lib.hasSuffix ".lidl" e.path then "--lidl ${pathArg}"
+          else if isHeader && e.impl_class != null then
+            ''--from-header ${pathArg} --impl-class ${lib.escapeShellArg e.impl_class} --metadata "$_qtgen_scratch/meta.json"''
+          else throw ''
+            logos-plugin-qt: cannot generate the Qt consumer wrapper for '${e.name}' from ${e.path}.
+
+            A dependency/interface contract is either a `.lidl` file or the C++
+            impl header it is derived from (`.h`/`.hpp`, which additionally
+            needs `impl_class`). Fix the metadata.json entry that names it
+            (`interface_dependencies` or `dependency_overrides`).
+          '';
+      in synthMeta + ''
+        logos-qt-generator ${inputArgs} \
+          --backend consumer --module ${nameArg} --bind ${e.bind} \
+          --output-dir ./generated_code
+        if [ ! -s "./generated_code/${e.name}_api.h" ] || [ ! -s "./generated_code/${e.name}_api.cpp" ]; then
+          echo "Error: logos-qt-generator emitted no consumer wrapper for '${e.name}' (${e.path})" >&2
+          exit 1
+        fi
+      '') consumerSpecs;
+
+    # The generator invocations, as a shell snippet. Two shapes, and which one
+    # a module gets is decided HERE, at eval time, so the lp script is emitted
+    # verbatim as it always was.
+    #
+    #   lp  — one logos-cpp-generator call, unchanged: it emits both the
+    #         Qt-free per-dep wrappers and the umbrella.
+    #
+    #   qt  — the per-dep wrappers come from logos-qt-generator's consumer
+    #         backend, which is a VENEER over the same logos-protocol C ABI the
+    #         lp wrappers use (one transport, one codec, one Qt type mapper
+    #         under both surfaces) rather than a second, parallel Qt
+    #         implementation. logos-cpp-generator is still what emits the
+    #         UMBRELLA — `logos_sdk.{h,cpp}`, the flat `LogosModules` struct —
+    #         because the consumer backend has no notion of an aggregate, and
+    #         re-implementing one here would put two emitters back in the
+    #         picture for the one artifact they currently agree on.
+    #
+    # The umbrella run therefore writes to a SCRATCH directory and only
+    # logos_sdk.{h,cpp} is taken from it: its per-interface wrappers are the
+    # legacy Qt emitter's output, which is exactly what this replaces, and
+    # copying them out — or letting them land in generated_code to be
+    # overwritten — would leave the shipped wrapper's authorship ambiguous.
+    #
+    # Two things about that umbrella call are load-bearing:
+    #
+    #   * `--dep` is dropped. Those flags ONLY drive wrapper emission; the
+    #     umbrella's members come from metadata.json's `dependencies` array
+    #     (main.cpp reads `deps` from the metadata and hands THAT to
+    #     writeUmbrellaHeaderFromDeps), so dropping them costs nothing.
+    #
+    #   * `--interface` is kept. The umbrella's `bind_<name>(...)` factories
+    #     come from the interface NAMES, and a cross-repo interface (an entry
+    #     with an `input`) can only reach the generator through a flag — it
+    #     self-resolves local entries from metadata.json but skips those. Drop
+    #     the flags and such a module silently loses its bind factory.
+    #
+    # The Qt umbrella's shape is what makes this split work: for `--api-style
+    # qt` it emits `LogosModules(LogosAPI* api)` with each member built as
+    # `<dep>(api)` and each factory as `<Iface>(api, moduleName)` — precisely
+    # the two constructors lidlMakeQtConsumerSource emits for Static and Bound.
+    # (It is NOT style-agnostic in general: the lp branch emits a
+    # default-constructible struct with std::string binds. It is agnostic to
+    # WHICH generator produced the wrappers for a given style, which is the
+    # property relied on here.)
+    generatorCalls = if !isQt then ''
+      logos-cpp-generator --metadata metadata.json --general-only \
+        --api-style ${apiStyle} \
+        --output-dir ./generated_code ${interfaceArgs} ${depArgs}
+    '' else ''
+      _umbrella_dir="$(mktemp -d)"
+      logos-cpp-generator --metadata metadata.json --general-only \
+        --api-style qt \
+        --output-dir "$_umbrella_dir" ${interfaceArgs}
+      for _u in logos_sdk.h logos_sdk.cpp; do
+        if [ ! -s "$_umbrella_dir/$_u" ]; then
+          echo "Error: logos-cpp-generator emitted no $_u for '${config.name}'" >&2
+          ls -la "$_umbrella_dir" >&2
+          exit 1
+        fi
+        cp "$_umbrella_dir/$_u" "./generated_code/$_u"
+      done
+      rm -rf "$_umbrella_dir"
+
+      echo "Running logos-qt-generator --backend consumer for the Qt-typed dependency wrappers..."
+      _qtgen_scratch="$(mktemp -d)"
+      ${qtConsumerCalls}
+      rm -rf "$_qtgen_scratch"
+    '';
+
     # Copy external libraries to lib/
     externalLibCopies = lib.concatMapStringsSep "\n" (extLib:
       let
@@ -129,12 +269,12 @@ let
       # Copy external libraries
       ${externalLibCopies}
 
-      # Run logos-cpp-generator with metadata.json and --general-only.
-      # `--api-style` picks the type surface of the generated <Module>
-      # client wrappers + the umbrella LogosModules struct: std for
-      # universal modules (pure-C++ impl + Qt glue, no Qt at the call
-      # site), qt for legacy / handcrafted Qt modules (the historical
-      # default — backward-compatible with every existing consumer).
+      # Emit the consumer surface: one `<dep>_api.{h,cpp}` per dependency /
+      # interface, plus the umbrella LogosModules struct that aggregates them.
+      # `--api-style` picks the type surface: lp (Qt-free, the logos-protocol
+      # C ABI) for core universal + cdylib modules, qt (QString / QVariantList
+      # / LogosResult) for ui_qml backends and handcrafted Qt modules. Which
+      # generator emits what is `generatorCalls` above.
       echo "Running logos-cpp-generator (api-style=${apiStyle})..."
       ${lib.optionalString (interfaceDeps != [])
         ("echo " + lib.escapeShellArg ("Binding interfaces: "
@@ -142,11 +282,9 @@ let
       ${lib.optionalString (staticDeps != [])
         ("echo " + lib.escapeShellArg ("Generating deps from LIDL: "
           + lib.concatMapStringsSep ", " (e: e.name) staticDeps))}
-      logos-cpp-generator --metadata metadata.json --general-only \
-        --api-style ${apiStyle} \
-        --output-dir ./generated_code ${interfaceArgs} ${depArgs}
+      ${generatorCalls}
 
-      # Check what was generated by logos-cpp-generator
+      # Check what the generators produced
       echo "Checking generated files in generated_code:"
       ls -la ./generated_code/ 2>/dev/null || echo "No generated files"
 
