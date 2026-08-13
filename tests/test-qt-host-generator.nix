@@ -57,6 +57,18 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     grep -q "$sym" $c || { echo "C-ABI forwarding lost: $sym"; exit 1; }
   done
 
+  # ---- drift guard against the OTHER copy of this emitter ------------------
+  # logos-qt-sdk still ships qt-generator/lidl_gen_cdylib_glue.cpp, the same
+  # emitter this file tests. Both compile, both emit loadable glue, so calling
+  # the wrong one is not an error — it silently emits OLDER glue. That is
+  # exactly how the host-services grant below went undelivered for a whole
+  # phase while every build stayed green.
+  #
+  # This asserts the property that made it detectable: the maintained copy
+  # forwards the grant. If someone points the builder back at qt-sdk's
+  # generator, the module build stops producing this line and the assertions
+  # below fail — instead of a module silently coming up unprivileged.
+
   # ---- the host-services grant --------------------------------------------
   # The grant has to reach the MODULE's image: the host binary and the cdylib
   # each link their own logos-protocol, so each has its own process-global
