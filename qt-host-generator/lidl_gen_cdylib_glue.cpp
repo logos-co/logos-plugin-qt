@@ -22,6 +22,11 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
     s << "#include \"logos_provider_object.h\"\n";
     s << "#include \"logos_json_convert.h\"\n";
     s << "#include \"logos_module_impl.h\"\n";
+    // Needed for LOGOS_PROTOCOL_VERSION_MINOR, which the host-services guard in
+    // onInit tests. Without it the macro is simply undefined here and the guard
+    // silently evaluates FALSE — the grant is never forwarded and the module
+    // comes up unprivileged with no diagnostic anywhere.
+    s << "#include \"logos_protocol.h\"\n";
     s << "#include \"logos_types.h\"\n";
     s << "#include <QDebug>\n";
     s << "#include <QObject>\n";
@@ -315,6 +320,10 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     s << "    //\n";
     s << "    // BEFORE the context forward, so a privileged impl may already\n";
     s << "    // use the granted services from its context-ready hook.\n";
+    // Same protocol-MINOR guard as the C-ABI export: glue generated for a
+    // module built against logos-protocol < 0.3 must still compile, and there
+    // is no grant entry point to call there.
+    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && LOGOS_PROTOCOL_VERSION_MINOR >= 3\n";
     s << "    const QString hostServices = obj->property(\"hostServices\").toString();\n";
     s << "    if (!hostServices.isEmpty()) {\n";
     s << "        if (logos_module_grant_host_services(\n";
@@ -327,6 +336,7 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     s << "                       << hostServices;\n";
     s << "        }\n";
     s << "    }\n";
+    s << "#endif\n";
     s << "    // Context LAST — comes from the host's property stamping on the\n";
     s << "    // LogosAPI object, forwarded across the C ABI; the cdylib never\n";
     s << "    // sees Qt. (The impl fires its context-ready hook once BOTH the\n";
