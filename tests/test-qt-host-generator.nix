@@ -52,9 +52,40 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   # of these is a module that loads and then silently does nothing.
   for sym in logos_module_dispatch logos_module_string_free \
              logos_module_get_methods logos_module_accept_token \
-             logos_module_set_emit_callback logos_module_set_context; do
+             logos_module_set_emit_callback logos_module_set_context \
+             logos_module_grant_host_services; do
     grep -q "$sym" $c || { echo "C-ABI forwarding lost: $sym"; exit 1; }
   done
+
+  # ---- the host-services grant --------------------------------------------
+  # The grant has to reach the MODULE's image: the host binary and the cdylib
+  # each link their own logos-protocol, so each has its own process-global
+  # grant state. If the glue stopped forwarding it, every gated call in a
+  # privileged module would fail closed and do so SILENTLY — lp_token_keys()
+  # simply returns null, which is indistinguishable from an empty store.
+  grep -q 'obj->property("hostServices")' $c \
+    || { echo "grant not read from the host's property stamping"; exit 1; }
+
+  # Ordered BEFORE the context forward, so a privileged impl may already use
+  # the granted services from its context-ready hook. Compare line numbers
+  # rather than eyeballing: this is exactly the kind of ordering that survives
+  # a refactor by accident and then breaks a trust-root module at startup.
+  grant_line=$(grep -n 'logos_module_grant_host_services' $c | head -1 | cut -d: -f1)
+  ctx_line=$(grep -n 'logos_module_set_context' $c | head -1 | cut -d: -f1)
+  if [ "$grant_line" -ge "$ctx_line" ]; then
+    echo "grant ($grant_line) must be forwarded BEFORE set_context ($ctx_line)"; exit 1
+  fi
+
+  # An ungranted module must not be handed an empty grant: lp_grant_host_services
+  # REPLACES the current grant, so pushing "" would be a needless clear, and the
+  # emitted guard is what keeps an ordinary module fail-closed without a call.
+  grep -q 'if (!hostServices.isEmpty())' $c \
+    || { echo "missing the empty-property guard"; exit 1; }
+
+  # A refused grant must be reported. It leaves the module running UNPRIVILEGED,
+  # and the symptom otherwise surfaces far away as an unexplained empty registry.
+  grep -q 'host services refused' $c \
+    || { echo "a refused grant is swallowed"; exit 1; }
 
   # `void` and `result` returns are the two shapes the glue has to special-case
   # (an invalid QVariant is this slot's failure token, so a void method needs
