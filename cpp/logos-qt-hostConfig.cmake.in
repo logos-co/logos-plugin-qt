@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+# logos-qt-hostConfig.cmake — consumed by `find_package(logos-qt-host)`.
+# Re-resolves the runtime's dependencies (Qt + logos-protocol, which itself
+# propagates Boost / OpenSSL / nlohmann_json) before importing the target.
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(Qt6 REQUIRED COMPONENTS Core RemoteObjects)
+find_dependency(logos-protocol REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/logos-qt-hostTargets.cmake")
+
+check_required_components(logos-qt-host)
