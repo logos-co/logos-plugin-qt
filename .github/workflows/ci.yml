@@ -27,3 +27,9 @@ jobs:
 
       - name: Header generator guard test
         run: nix build '.#checks.x86_64-linux.header-generator-guard'
+
+      - name: Build Qt host runtime
+        run: nix build '.#checks.x86_64-linux.qt-host'
+
+      - name: Qt host glue generator test
+        run: nix build '.#checks.x86_64-linux.qt-host-generator'

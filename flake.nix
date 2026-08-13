@@ -1,5 +1,5 @@
 {
-  description = "Logos Qt Plugin Backend — builds Logos modules as Qt 6 plugins";
+  description = "Logos Qt Plugin Backend — builds Logos modules as Qt 6 plugins, and the Qt host runtime they link";
 
   inputs = {
     logos-nix.url = "github:logos-co/logos-nix";
@@ -7,9 +7,19 @@
     # When used via logos-module-builder, logosModule is injected by the builder.
     logos-module.url = "github:logos-co/logos-module";
     nixpkgs.follows = "logos-nix/nixpkgs";
+    # The transport / consumer / token layer logos-qt-host is the Qt face of.
+    logos-protocol = {
+      url = "github:logos-co/logos-protocol";
+      inputs.logos-nix.follows = "logos-nix";
+    };
+    # The canonical LIDL frontend logos-qt-host-generator parses contracts with.
+    logos-lidl = {
+      url = "github:logos-co/logos-lidl";
+      inputs.logos-nix.follows = "logos-nix";
+    };
   };
 
-  outputs = { self, nixpkgs, logos-module, ... }:
+  outputs = { self, nixpkgs, logos-module, logos-protocol, logos-lidl, ... }:
     let
       systems = [ "aarch64-darwin" "x86_64-darwin" "aarch64-linux" "x86_64-linux" ];
 
@@ -45,17 +55,39 @@
       # Raw export: no deps — for use by logos-module-builder
       rawLib = rawLib;
 
-      # Provide the cmake module as a package
-      packages = forAllSystems ({ pkgs, ... }: {
+      # The C++ half of this backend: the Qt host runtime a plugin links, and
+      # the generator that emits the plugin around a cdylib module's C ABI.
+      #
+      # These are deliberately NOT reachable from `lib` / `rawLib` /
+      # `cmake-module`. A consumer that only wants the Nix build functions or
+      # the CMake module (logos-module-builder's common path) must not be made
+      # to realise a Qt + protocol build to get them, and under Nix's laziness
+      # it is not — as long as nothing in those attributes mentions these.
+      packages = forAllSystems ({ pkgs, system, ... }: {
         cmake-module = pkgs.runCommand "logos-qt-plugin-cmake" {} ''
           mkdir -p $out/share/cmake/LogosModule
           cp ${./cmake/LogosModule.cmake} $out/share/cmake/LogosModule/LogosModule.cmake
         '';
+
+        logos-qt-host = import ./nix/qt-host.nix {
+          inherit pkgs;
+          src = ./.;
+          protocolLib = logos-protocol.packages.${system}.logos-protocol-lib;
+        };
+
+        logos-qt-host-generator = import ./nix/qt-host-generator.nix {
+          inherit pkgs;
+          src = ./qt-host-generator;
+          logos-lidl = logos-lidl.packages.${system}.logos-lidl;
+        };
+
+        # Unchanged: `default` is still the CMake module, so `nix build` on
+        # this repo stays the cheap pure-Nix output it has always been.
         default = self.packages.${pkgs.system}.cmake-module;
       });
 
       # Tests
-      checks = forAllSystems ({ pkgs, ... }: {
+      checks = forAllSystems ({ pkgs, system, ... }: {
         # Build a vanilla Qt plugin with no Logos SDK deps
         vanilla-plugin = import ./tests/test-vanilla-plugin.nix {
           inherit pkgs;
@@ -70,6 +102,16 @@
         # with no public API must not.
         header-generator-guard = import ./tests/test-header-generator-guard.nix {
           inherit pkgs;
+        };
+
+        # The Qt host runtime compiles and installs a usable CMake package.
+        qt-host = self.packages.${system}.logos-qt-host;
+
+        # Drive the glue generator over a real contract and assert on the
+        # emitted C++.
+        qt-host-generator = import ./tests/test-qt-host-generator.nix {
+          inherit pkgs;
+          generator = self.packages.${system}.logos-qt-host-generator;
         };
       });
 
