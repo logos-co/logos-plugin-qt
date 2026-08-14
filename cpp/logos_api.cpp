@@ -3,6 +3,7 @@
 #include "logos_api_provider.h"
 #include "logos_thread_marshal.h"
 #include "token_manager.h"
+#include <QDebug>
 #include <QVariant>
 #include <string>
 
@@ -14,14 +15,46 @@ LogosAPI::LogosAPI(const QString& module_name, QObject *parent)
 LogosAPI::LogosAPI(const QString& module_name,
                    LogosTransportSet transports,
                    QObject *parent)
+    : LogosAPI(module_name, nullptr, std::move(transports), parent)
+{
+}
+
+LogosAPI::LogosAPI(const QString& module_name,
+                   TokenManager* token_store,
+                   LogosTransportSet transports,
+                   QObject *parent)
     : QObject(parent)
     , m_module_name(module_name)
     , m_provider(nullptr)
     , m_token_manager(nullptr)
 {
     m_provider = new LogosAPIProvider(m_module_name, std::move(transports), this);
-    m_token_manager = &TokenManager::instance();
+    // An explicit store wins. NULL resolves to the store for the identity this
+    // object says it is — which is TokenManager::instance() itself, the same
+    // object this line used to name outright, for every identity nobody has
+    // isolated. So this is not a behaviour change; it is the hook that lets one
+    // BECOME a behaviour change, for one name, when a host asks for it.
+    m_token_manager = token_store ? token_store
+                                  : &TokenManager::forIdentity(m_module_name);
     qRegisterMetaType<LogosResult>("LogosResult");
+}
+
+LogosAPI* LogosAPI::forIdentity(const QString& identity, QObject* parent)
+{
+    if (identity.isEmpty()) {
+        qWarning() << "LogosAPI::forIdentity: refusing to isolate the empty identity";
+        return nullptr;
+    }
+    if (!TokenManager::isolateIdentity(identity)) {
+        // Not advisory. A client for this name already captured the ambient
+        // ring as a raw pointer, so isolating now would split the identity
+        // across two stores.
+        qWarning() << "LogosAPI::forIdentity: cannot isolate" << identity
+                   << "- the shared token store was already handed out under"
+                      " that name; refusing to hand back a half-isolated identity";
+        return nullptr;
+    }
+    return new LogosAPI(identity, &TokenManager::forIdentity(identity), parent);
 }
 
 LogosAPI::LogosAPI(const std::string& module_name, QObject *parent)
