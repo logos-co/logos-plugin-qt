@@ -115,10 +115,14 @@ in {
     pluginLib,
     logosSdk,
     apiStyle ? "qt",
-    # Path to this module's LIDL contract (or null). Used ONLY when the plugin
-    # cannot be introspected — i.e. cross-compilation, where the builder cannot
-    # load the host binary it just produced. Native builds ignore it entirely.
+    # Path to this module's LIDL contract (or null). This is the PRIMARY input
+    # for the qt surface — a module that publishes a contract has its wrapper
+    # generated from it and is never introspected. Only a module with no
+    # contract falls back to reading its compiled plugin.
     contractLidl ? null,
+    # logos-qt-generator (build-platform). Required to take the contract-driven
+    # qt path; null demotes it to the legacy emitter, loudly.
+    qtGenerator ? null,
   }:
   let
     commonArgs = {
@@ -130,7 +134,7 @@ in {
       };
     };
   in mkBuildHeaders.build {
-    inherit pkgs src config commonArgs logosSdk apiStyle contractLidl;
+    inherit pkgs src config commonArgs logosSdk apiStyle contractLidl qtGenerator;
     lib = pluginLib;
   };
 
