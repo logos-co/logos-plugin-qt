@@ -104,6 +104,13 @@
           inherit pkgs;
         };
 
+        # WHICH emitter buildHeaders picks, and whether it says so. A silent
+        # fall back to the legacy Qt emitter is green in every other check.
+        headers-emitter-routing = import ./tests/test-headers-emitter-routing.nix {
+          inherit pkgs;
+          inherit (rawLib) buildHeaders;
+        };
+
         # The Qt host runtime compiles and installs a usable CMake package.
         qt-host = self.packages.${system}.logos-qt-host;
 
