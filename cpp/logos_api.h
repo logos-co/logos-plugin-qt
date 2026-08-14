@@ -140,6 +140,68 @@ public:
      */
     LogosAPI(const std::string& module_name, LogosTransportSet transports, QObject *parent = nullptr)
         : LogosAPI(QString::fromStdString(module_name), std::move(transports), parent) {}
+
+    /* ── per-plugin identity ────────────────────────────────────────────────
+     *
+     * The ctors above bind this LogosAPI to `TokenManager::forIdentity(name)`,
+     * which is `TokenManager::instance()` — the image's ambient ring — unless
+     * the name has been isolated. That default is byte-for-byte the old
+     * behaviour, and deliberately so: nothing changes for any existing caller.
+     *
+     * The ctors below are how a HOST that loads several plugins into ONE
+     * process gives each of them its own authority. Giving a plugin its own
+     * origin STRING does nothing on its own — origin is never consulted on the
+     * hot path, which reads the store first and only mints on a miss — so what
+     * has to differ is the STORE the plugin presents tokens from.
+     */
+
+    /**
+     * @brief Construct bound to an EXPLICIT token store.
+     *
+     * `token_store` is normally `&TokenManager::forIdentity(module_name)` after
+     * a successful `TokenManager::isolateIdentity(module_name)`; see
+     * LogosAPI::forIdentity(), which packages exactly that.
+     *
+     * nullptr means "the store for the identity I said I am" —
+     * `TokenManager::forIdentity(module_name)` — NOT the ambient singleton, so
+     * an isolated identity is honoured even when the caller passes nothing.
+     *
+     * `parent` is deliberately NOT defaulted here: with a default it would make
+     * the existing two-argument call `LogosAPI(name, nullptr)` (basecamp's
+     * app/main.cpp does exactly that) ambiguous against
+     * LogosAPI(const QString&, QObject*).
+     */
+    LogosAPI(const QString& module_name,
+             TokenManager* token_store,
+             LogosTransportSet transports,
+             QObject* parent);
+
+    /** @brief Explicit token store, default transport set. */
+    LogosAPI(const QString& module_name, TokenManager* token_store, QObject* parent)
+        : LogosAPI(module_name, token_store, LogosTransportSet{}, parent) {}
+
+    /**
+     * @brief A LogosAPI that speaks AS `identity`, from an ISOLATED store.
+     *
+     * Isolates `identity` (idempotent) and binds the returned object to that
+     * identity's private token store — seeded with the bootstrap keys and
+     * nothing else, so its first call to any target must go through
+     * `capability_module.requestModule` instead of finding the target's root
+     * token lying in the host's ambient ring.
+     *
+     * Returns NULLPTR when the identity cannot be isolated, which happens only
+     * if a client for that exact name was already handed the shared store. That
+     * is fatal for the identity and must not be papered over by falling back to
+     * the host's LogosAPI: one client on the ambient ring and one on the
+     * private store is the "looks fixed, isn't" outcome this whole mechanism
+     * exists to avoid. Fail the load instead.
+     *
+     * Isolating the store is only half of an identity. The host must also make
+     * the name a KNOWN CALLER by registering an auth token for it with
+     * capability_module (`informModuleToken`), or the very first
+     * `requestModule` is refused by the known-caller gate.
+     */
+    static LogosAPI* forIdentity(const QString& identity, QObject* parent = nullptr);
     
     /**
      * @brief Destructor
