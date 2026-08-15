@@ -7,8 +7,22 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core RemoteObjects Qml)
 
-# ── Locate templates (injected by the nix test harness into cmake/) ────────
-set(TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+# ── Locate templates ──────────────────────────────────────────────────────
+# The fixture does NOT carry its own copy. It used to: the templates were
+# moved in here when this repo's duplicate LogosModule.cmake was deleted, and
+# they then sat byte-identical to logos-module-builder's with nothing comparing
+# them. They are owned by this repo now (../../cmake) and the harness passes
+# that directory in, the same way logos_module() receives it in a real build.
+if(NOT LOGOS_VIEW_TEMPLATE_DIR AND DEFINED ENV{LOGOS_VIEW_TEMPLATE_DIR})
+    set(LOGOS_VIEW_TEMPLATE_DIR "$ENV{LOGOS_VIEW_TEMPLATE_DIR}")
+endif()
+if(NOT LOGOS_VIEW_TEMPLATE_DIR)
+    message(FATAL_ERROR
+        "rep-file-plugin: LOGOS_VIEW_TEMPLATE_DIR is not set. Pass the "
+        "repository's cmake/ directory; this fixture has no copy to fall "
+        "back to, deliberately.")
+endif()
+set(TEMPLATE_DIR "${LOGOS_VIEW_TEMPLATE_DIR}")
 
 # ── .rep file under test ──────────────────────────────────────────────────
 set(REP_FILE "${CMAKE_CURRENT_SOURCE_DIR}/rep_test.rep")
