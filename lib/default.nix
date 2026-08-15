@@ -10,7 +10,7 @@
 # The logos-cpp-sdk (generator, SDK lib, headers) is added by the caller
 # (logos-module-builder) via extraNativeBuildInputs / extraBuildInputs / env.
 #
-{ nixpkgs, lib, backendRoot }:
+{ nixpkgs, lib }:
 
 let
   common = import ./common.nix { inherit lib; };
@@ -45,9 +45,16 @@ in {
       nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
       buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
       cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
+      # point it at its own root, which shipped a second copy of
+      # LogosModule.cmake; the caller only overrode it when the module itself
+      # carried one, so ui_qml plugins silently configured with the backend's
+      # copy. The CMake module belongs to logos-module-builder, which now always
+      # passes this in extraEnv. With no default, a caller that forgets gets a
+      # loud FATAL_ERROR from the module's CMakeLists instead of a build against
+      # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -87,9 +94,16 @@ in {
       nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
       buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
       cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
+      # point it at its own root, which shipped a second copy of
+      # LogosModule.cmake; the caller only overrode it when the module itself
+      # carried one, so ui_qml plugins silently configured with the backend's
+      # copy. The CMake module belongs to logos-module-builder, which now always
+      # passes this in extraEnv. With no default, a caller that forgets gets a
+      # loud FATAL_ERROR from the module's CMakeLists instead of a build against
+      # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -139,7 +153,8 @@ in {
   };
 
   # Dev shell dependencies — Qt only.
-  # SDK env vars are added by the caller (logos-module-builder).
+  # SDK env vars, including LOGOS_MODULE_BUILDER_ROOT, are exported by the
+  # caller (logos-module-builder) — it owns cmake/LogosModule.cmake now.
   devShellInputs = pkgs: {
     logosModule ? null,
   }: {
@@ -147,7 +162,6 @@ in {
     buildInputs = common.commonBuildInputs pkgs;
     shellHook = ''
       ${if logosModule != null then ''export LOGOS_MODULE_ROOT="${logosModule}"'' else ""}
-      export LOGOS_MODULE_BUILDER_ROOT="${backendRoot}"
     '';
   };
 

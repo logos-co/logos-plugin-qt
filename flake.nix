@@ -33,7 +33,6 @@
       rawLib = import ./lib {
         inherit nixpkgs;
         inherit (nixpkgs) lib;
-        backendRoot = ./.;
       };
 
       # Convenience wrapper that pre-fills logosModule from this flake's inputs.
@@ -58,17 +57,21 @@
       # The C++ half of this backend: the Qt host runtime a plugin links, and
       # the generator that emits the plugin around a cdylib module's C ABI.
       #
-      # These are deliberately NOT reachable from `lib` / `rawLib` /
-      # `cmake-module`. A consumer that only wants the Nix build functions or
-      # the CMake module (logos-module-builder's common path) must not be made
-      # to realise a Qt + protocol build to get them, and under Nix's laziness
-      # it is not — as long as nothing in those attributes mentions these.
+      # These are deliberately NOT reachable from `lib` / `rawLib`. A consumer
+      # that only wants the Nix build functions (logos-module-builder's common
+      # path) must not be made to realise a Qt + protocol build to get them,
+      # and under Nix's laziness it is not — as long as nothing in those
+      # attributes mentions these.
+      #
+      # There is no `cmake-module` output any more. This repo used to ship its
+      # own cmake/LogosModule.cmake, and because logos-module-builder set
+      # LOGOS_MODULE_BUILDER_ROOT only when a MODULE carried that file (none
+      # does), every ui_qml plugin configured with THIS copy while every core
+      # module configured with the builder's. Both compiled; the divergence was
+      # invisible until something depended on it. The CMake module is the
+      # builder's build-system contract — it reads LOGOS_API_STYLE,
+      # LOGOS_MODULE_GO_STATIC_LIBS, generated_code/ — so it lives there, once.
       packages = forAllSystems ({ pkgs, system, ... }: {
-        cmake-module = pkgs.runCommand "logos-qt-plugin-cmake" {} ''
-          mkdir -p $out/share/cmake/LogosModule
-          cp ${./cmake/LogosModule.cmake} $out/share/cmake/LogosModule/LogosModule.cmake
-        '';
-
         logos-qt-host = import ./nix/qt-host.nix {
           inherit pkgs;
           src = ./.;
@@ -81,9 +84,10 @@
           logos-lidl = logos-lidl.packages.${system}.logos-lidl;
         };
 
-        # Unchanged: `default` is still the CMake module, so `nix build` on
-        # this repo stays the cheap pure-Nix output it has always been.
-        default = self.packages.${pkgs.system}.cmake-module;
+        # `default` was the CMake module (a cheap pure-Nix copy) until that
+        # output went away. The host runtime is what this repo now produces
+        # that a consumer can actually build, so `nix build` on it builds that.
+        default = self.packages.${pkgs.system}.logos-qt-host;
       });
 
       # Tests
