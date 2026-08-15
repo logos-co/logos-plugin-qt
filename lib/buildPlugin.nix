@@ -97,6 +97,27 @@ let
         if [ -d "${libInfo}/lib" ]; then
           cp -r "${libInfo}/lib"/* lib/ 2>/dev/null || true
         fi
+        # A library that follows the WINDOWS convention ships its runtime half
+        # in bin/ -- that is CMake's RUNTIME destination, and what openssl,
+        # postgres and every autotools port in nixpkgs do. Without this the
+        # staged lib/ holds the import library or the static archive but no
+        # .dll, and LogosModule.cmake then hard-fails with "found no companion
+        # DLL in .../lib" (or links the static archive by accident).
+        #
+        # Only THIS library's own files are taken, never all of bin/: the
+        # dependency DLLs that nixpkgs' win-dll-link hook stages there must stay
+        # symlinks, created by the postFixup pass below. Copying them as real
+        # files would make $out/lib look complete while leaving the Nix closure
+        # empty again -- a PE embeds no store paths, so those symlinks are the
+        # only thing the reference scanner can see.
+        # Matching only *.dll keeps this inherently Windows-only -- no native
+        # package ships one in bin/ -- so no platform flag has to be threaded
+        # in, and a native build provably cannot pick up a stray executable.
+        if [ -d "${libInfo}/bin" ]; then
+          for f in "${libInfo}"/bin/lib${extLib.name}.dll "${libInfo}"/bin/${extLib.name}.dll; do
+            [ -f "$f" ] && cp -fL "$f" lib/ 2>/dev/null || true
+          done
+        fi
         if [ -f "${libInfo}" ]; then
           cp "${libInfo}" lib/ 2>/dev/null || true
         fi
