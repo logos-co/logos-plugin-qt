@@ -18,12 +18,12 @@ pkgs.stdenv.mkDerivation {
 
   dontUseCmakeConfigure = true;
 
-  # The CMakeLists.txt expects templates in cmake/ under the source root.
-  postUnpack = ''
-    mkdir -p $sourceRoot/cmake
-    cp ${../cmake/LogosViewReplicaFactory.h.in} $sourceRoot/cmake/LogosViewReplicaFactory.h.in
-    cp ${../cmake/LogosViewReplicaFactory.cpp.in} $sourceRoot/cmake/LogosViewReplicaFactory.cpp.in
-  '';
+  # The templates live in the fixture's own cmake/ (tests/rep-file-plugin/cmake).
+  # They used to be copied in from this repo's cmake/ — the same directory that
+  # held the duplicate LogosModule.cmake. That directory is gone: the CMake
+  # module and the templates it instantiates are logos-module-builder's, and
+  # exist once, there. What is left here is a test fixture, and it says so by
+  # living under tests/.
 
   buildPhase = ''
     runHook preBuild
