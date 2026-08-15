@@ -47,12 +47,21 @@ rec {
     pkgs.qt6.qtremoteobjects
   ];
 
+  # The ONE copy of the LogosView*.in templates that logos_module(REP_FILE ...)
+  # instantiates. See ../cmake/README.md for why they are owned here rather
+  # than next to LogosModule.cmake: logos-module-builder depends on this repo
+  # and not the reverse, so this is the only directory both consumers of the
+  # templates — that repo's LogosModule.cmake, and this repo's
+  # tests/rep-file-plugin fixture — can read from.
+  viewTemplateDir = ../cmake;
+
   # CMake flags for Qt plugin builds.
   # Only includes logosModule (for interface.h).
   # SDK flags are added by the builder layer, not here.
   commonCmakeFlags = { logosModule }: [
     "-GNinja"
     "-DLOGOS_MODULE_ROOT=${logosModule}"
+    "-DLOGOS_VIEW_TEMPLATE_DIR=${viewTemplateDir}"
   ];
 
   # Platform-specific post-build commands for library path fixing

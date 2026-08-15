@@ -4,6 +4,11 @@
 
 let
   pluginSrc = ./rep-file-plugin;
+  # The ONE copy of the templates, straight from this repo's cmake/. The
+  # fixture is handed the same directory logos_module() is handed in a real
+  # build, so this check now exercises the file every ui_qml module compiles —
+  # not a private duplicate of it that could pass while the real one is broken.
+  viewTemplates = ../cmake;
 in
 pkgs.stdenv.mkDerivation {
   pname = "logos-plugin-qt-rep-file-test";
@@ -18,19 +23,19 @@ pkgs.stdenv.mkDerivation {
 
   dontUseCmakeConfigure = true;
 
-  # The templates live in the fixture's own cmake/ (tests/rep-file-plugin/cmake).
-  # They used to be copied in from this repo's cmake/ — the same directory that
-  # held the duplicate LogosModule.cmake. That directory is gone: the CMake
-  # module and the templates it instantiates are logos-module-builder's, and
-  # exist once, there. What is left here is a test fixture, and it says so by
-  # living under tests/.
+  # The templates are this repo's, and there is exactly one copy of them:
+  # cmake/. LogosModule.cmake still belongs to logos-module-builder — only the
+  # Qt-specific templates it instantiates are published from this side, because
+  # logos-module-builder depends on this repo and not the reverse, so this is
+  # the only directory both it and this fixture can read. See cmake/README.md.
+  LOGOS_VIEW_TEMPLATE_DIR = "${viewTemplates}";
 
   buildPhase = ''
     runHook preBuild
 
     mkdir -p build
     cd build
-    cmake .. -GNinja
+    cmake .. -GNinja -DLOGOS_VIEW_TEMPLATE_DIR="$LOGOS_VIEW_TEMPLATE_DIR"
     ninja
     cd ..
 

@@ -71,7 +71,24 @@
       # invisible until something depended on it. The CMake module is the
       # builder's build-system contract — it reads LOGOS_API_STYLE,
       # LOGOS_MODULE_GO_STATIC_LIBS, generated_code/ — so it lives there, once.
+      #
+      # cmake/ came back for a narrower reason: the four LogosView*.in
+      # templates. Those had the mirror-image problem — they sat next to
+      # LogosModule.cmake in the builder, but this repo's rep-file-plugin
+      # fixture also instantiates them and cannot reach the builder, so it kept
+      # a byte-identical second copy with nothing comparing the two. See
+      # cmake/README.md.
       packages = forAllSystems ({ pkgs, system, ... }: {
+        # The LogosView*.in templates, as a nameable output. `logos_module()`
+        # gets the same directory through LOGOS_VIEW_TEMPLATE_DIR; this output
+        # exists so a consumer (logos-module-builder's view-interface-abi
+        # check) can refer to the templates without depending on the layout of
+        # this repo's source tree.
+        logos-view-templates = pkgs.runCommand "logos-view-templates" { } ''
+          mkdir -p $out
+          cp ${./cmake}/LogosView*.in $out/
+        '';
+
         logos-qt-host = import ./nix/qt-host.nix {
           inherit pkgs;
           src = ./.;
