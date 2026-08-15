@@ -59,6 +59,22 @@ include could only ever go the wrong way. The two declarations meet at runtime
 via the IID string, where a mismatch is silent.
 
 That pair is enforced instead of documented: logos-module-builder's
-`view-interface-abi` check (it is the one repo that can see both sides) extracts
-the IID and the pure-virtual signature list from each and fails on any
-difference.
+`view-interface-abi` check (it is the one repo that can see both sides)
+compares them and fails on any difference. It reads three separate things,
+because three separate strings have to line up:
+
+* `#define <Name>_iid` and the ordered pure-virtual list — the abstract shape;
+* the argument of `Q_DECLARE_INTERFACE`, **resolved** through the `#define`s,
+  since that is what `qobject_cast` compares and it need not be the macro;
+* on the **concrete** classes in these templates — the ones carrying
+  `Q_OBJECT`, `Q_PLUGIN_METADATA` and `Q_INTERFACES` — the exported IID and
+  the declared interface list.
+
+That last group is the runtime binding, and for a while it was outside the
+check's window: bumping `Q_PLUGIN_METADATA(IID ...)` to `/2.0`, or deleting
+`Q_INTERFACES`, left the guard green while breaking a real view.
+
+Locally, `tests/rep-file-plugin` covers the same two mutations from the other
+direction — it builds a plugin from these templates, asserts the **exact** IID
+in the resulting binary (not a substring of it), then `QPluginLoader`s it and
+performs the same `qobject_cast` the host does.

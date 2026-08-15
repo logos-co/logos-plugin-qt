@@ -17,10 +17,19 @@ class QMetaObject;
 //
 // So the agreement is CHECKED, not requested. logos-module-builder's
 // `view-interface-abi` check (tests/test-view-interface-abi.nix, run by that
-// repo's CI) extracts the IID and the pure-virtual signature list from this
-// template and from the runtime header and fails the build if they differ.
-// Edit one side and that check goes red — do not add a "keep in sync" note
-// here instead, one lived here for a long time and never stopped a drift.
+// repo's CI) compares this template against the runtime header and fails the
+// build if they differ. Edit one side and that check goes red — do not add a
+// "keep in sync" note here instead, one lived here for a long time and never
+// stopped a drift.
+//
+// It reads the IID `#define`, the resolved argument of Q_DECLARE_INTERFACE,
+// the ordered pure-virtual list, AND the concrete class below: its
+// Q_PLUGIN_METADATA IID, its Q_INTERFACES list, and that it still derives
+// from the interface at all. Those last three are the runtime binding — the
+// abstract class above is only a compile-time shape — and they were once
+// outside the check, which is how a Q_PLUGIN_METADATA bumped to /2.0 and a
+// deleted Q_INTERFACES both stayed green. This repo's tests/rep-file-plugin
+// fixture covers the same ground from the binary side.
 class LogosViewReplicaFactory {
 public:
     virtual ~LogosViewReplicaFactory() = default;

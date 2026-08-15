@@ -68,3 +68,25 @@ target_link_libraries(rep_test_replica_factory PRIVATE
     Qt6::RemoteObjects
     Qt6::Qml
 )
+
+# ── Loader check ──────────────────────────────────────────────────────────
+# Loads the plugin above the way logos-view-module-runtime does and asserts
+# the exact IID plus a successful qobject_cast. `strings | grep` cannot see
+# either: it matched "logos.view.replica_factory" as a SUBSTRING, so an IID
+# bumped to /2.0 passed, and a deleted Q_INTERFACES (which leaves the IID
+# untouched and only breaks the cast) passed too.
+#
+# AUTOMOC is deliberately OFF here. This target includes the generated
+# LogosViewReplicaFactory.h purely for the interface declaration and the
+# Q_DECLARE_INTERFACE that gives qobject_cast its IID; it must NOT moc the
+# concrete plugin class that header also declares, or the checker would
+# export a second copy of the plugin metadata.
+add_executable(load_factory_check
+    "${CMAKE_CURRENT_SOURCE_DIR}/load_factory_check.cpp"
+)
+
+set_target_properties(load_factory_check PROPERTIES AUTOMOC OFF)
+
+target_include_directories(load_factory_check PRIVATE "${GEN_DIR}")
+
+target_link_libraries(load_factory_check PRIVATE Qt6::Core)

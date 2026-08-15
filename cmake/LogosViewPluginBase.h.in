@@ -14,8 +14,17 @@ class QRemoteObjectHostBase;
 //
 // The agreement is CHECKED, not requested: logos-module-builder's
 // `view-interface-abi` check (tests/test-view-interface-abi.nix, run by that
-// repo's CI) compares the IID and the pure-virtual signature list on both
-// sides and fails the build if they differ.
+// repo's CI) compares the IID `#define`, the resolved Q_DECLARE_INTERFACE
+// argument, the interface's base list and its ordered pure-virtual list on
+// both sides, and fails the build if they differ.
+//
+// It also requires that something in THIS file still derives from
+// LogosViewPlugin — the base class below. Unlike the replica factory, that
+// class is not itself a plugin root: the Q_OBJECT/Q_PLUGIN_METADATA/
+// Q_INTERFACES that bind it at runtime are emitted per-module by
+// logos-qt-sdk's `logos-qt-generator` (see lidl_gen_ui.cpp), which puts
+// `LogosViewPlugin` into the generated plugin class's Q_INTERFACES. That
+// generated class is outside this pair of files and so outside this check.
 class LogosViewPlugin {
 public:
     virtual ~LogosViewPlugin() = default;

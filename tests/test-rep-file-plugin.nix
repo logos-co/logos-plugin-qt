@@ -69,21 +69,46 @@ pkgs.stdenv.mkDerivation {
     }
     echo "OK: Replica factory is a valid shared library"
 
-    # Verify the factory class metadata is embedded (from Q_PLUGIN_METADATA)
-    if strings "$FACTORY" | grep -q "replica_factory"; then
-      echo "OK: Replica factory metadata found in binary"
-    else
-      echo "FAIL: Replica factory metadata not found in binary"
+    # ── The IID, EXACTLY ────────────────────────────────────────────────
+    # This used to be `strings | grep -q "logos.view.replica_factory"`, a
+    # SUBSTRING match. It therefore passed unchanged when the plugin class's
+    # Q_PLUGIN_METADATA was bumped to .../2.0 — the binary still contained
+    # the substring, so the assertion said nothing about which IID the
+    # plugin actually advertises.
+    #
+    # Assert the exact set instead: every replica_factory IID present in the
+    # binary must be the one and only expected IID. A binary carrying both
+    # /1.0 and /2.0 (the shape a bumped Q_PLUGIN_METADATA produces, since
+    # Q_DECLARE_INTERFACE still emits the old one) fails here.
+    EXPECTED_IID="logos.view.replica_factory/1.0"
+    FOUND_IIDS=$(strings "$FACTORY" \
+      | grep -oE 'logos\.view\.replica_factory/[0-9]+\.[0-9]+' \
+      | sort -u)
+    if [ -z "$FOUND_IIDS" ]; then
+      echo "FAIL: no LogosViewReplicaFactory IID embedded in the binary"
+      echo "      (Q_PLUGIN_METADATA missing, or moc did not run)"
       exit 1
     fi
+    if [ "$FOUND_IIDS" != "$EXPECTED_IID" ]; then
+      echo "FAIL: binary does not carry exactly one replica-factory IID."
+      echo "  expected: $EXPECTED_IID"
+      echo "  found:"
+      echo "$FOUND_IIDS" | sed 's/^/    /'
+      echo "  Two different IIDs means Q_PLUGIN_METADATA and"
+      echo "  Q_DECLARE_INTERFACE disagree — the host reads the first and"
+      echo "  casts on the second."
+      exit 1
+    fi
+    echo "OK: binary advertises exactly $EXPECTED_IID"
 
-    # Verify the IID is embedded (LogosViewReplicaFactory interface)
-    if strings "$FACTORY" | grep -q "logos.view.replica_factory"; then
-      echo "OK: LogosViewReplicaFactory IID found in binary"
-    else
-      echo "FAIL: LogosViewReplicaFactory IID not found in binary"
-      exit 1
-    fi
+    # ── Load it the way the host does ───────────────────────────────────
+    # The exact-IID assertion above still cannot see whether the plugin
+    # DECLARES the interface to moc. Deleting Q_INTERFACES leaves every
+    # string in the binary untouched and only makes qobject_cast return
+    # nullptr — the failure that shows up as a blank view. So the plugin is
+    # actually loaded and cast, exactly as
+    # logos-view-module-runtime's LogosQmlBridge::loadFactory does it.
+    ./build/load_factory_check "$PWD/$FACTORY" "$EXPECTED_IID" "RepTestReplica"
 
     runHook postCheck
   '';
