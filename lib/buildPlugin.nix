@@ -52,26 +52,43 @@ let
                else "qt";
     isQt = apiStyle == "qt";
 
-    # TRANSITIONAL: header-copy fallback for dependencies that don't publish a
-    # LIDL contract yet (mkLogosModule only puts such deps in `moduleDeps`).
-    # Copying a dep's prebuilt headers forces that dep's plugin to be built.
-    # Deps that DO publish LIDL come via `staticDeps`/`--dep` instead and are
-    # skipped here. Remove this block once every module exposes a `lidl` output.
-    moduleDepIncludes = lib.concatMapStringsSep "\n" (name:
-      let
-        dep = moduleDeps.${name} or null;
-        depHeaders =
-          if builtins.elem name staticDepNames then null  # generated from LIDL
-          else if dep == null then null
-          else if dep ? "headers-${apiStyle}" then dep."headers-${apiStyle}"
-          else dep;
-      in if depHeaders != null then ''
-        if [ -d "${depHeaders}/include" ]; then
-          echo "Copying ${apiStyle}-typed include files from ${name} (legacy header-copy)..."
-          cp -r "${depHeaders}/include"/* ./generated_code/ 2>/dev/null || true
-        fi
-      '' else ""
-    ) config.dependencies;
+    # The TRANSITIONAL header-copy fallback is GONE.
+    #
+    # It copied a dependency's PRE-BUILT `headers-${apiStyle}` output into
+    # generated_code/ for any dep that published no LIDL contract — which also
+    # forced that dep's whole plugin to be compiled just to obtain headers.
+    # Every dep now arrives as `--dep <name>=<name>.lidl` (see `staticDeps` /
+    # `depArgs`) and its wrapper is generated from the contract, so no dep
+    # plugin is built at consume time.
+    #
+    # `moduleDeps` is still ACCEPTED, and asserted empty, on purpose. The caller
+    # (logos-module-builder's mkLogosModule) fills it from
+    # `legacyHeaderDepNames` = the deps for which `depIsLidl` is false, and a
+    # caller that predates this change will keep passing them. Dropping them on
+    # the floor would leave the module with neither a `--dep` wrapper nor a
+    # copied header — the build would then die inside a generated translation
+    # unit on a missing `<dep>_api.h`, pointing at the generator rather than at
+    # the dependency that is actually stale. So refuse, by name, here.
+    legacyHeaderDepNames =
+      builtins.filter (name: !(builtins.elem name staticDepNames))
+        (builtins.attrNames moduleDeps);
+
+    assertNoLegacyHeaderDeps =
+      if legacyHeaderDepNames == [] then null
+      else throw ''
+        logos-plugin-qt: module '${config.name}' has dependencies that publish no LIDL contract:
+          ${lib.concatStringsSep ", " legacyHeaderDepNames}
+
+        The header-copy fallback that used to serve them was removed. A consumer
+        wrapper is now generated from the dependency's published `lidl` output
+        (`--dep <name>=<name>.lidl`), which needs no dependency plugin build and
+        works under cross-compilation.
+
+        Fix: rebuild / re-pin each dependency above against a current
+        logos-module-builder. Any module built by one publishes a `lidl`
+        contract; `interface: "universal"` derives it from the impl header
+        automatically.
+      '';
 
     # --interface flags for logos-cpp-generator, one per interface
     # dependency. Paths were resolved by mkLogosModule (local files from
@@ -277,15 +294,16 @@ let
     # The full generation snippet. Runs in the (source) working directory and
     # writes generated_code/ + stages external libs into lib/. Shared verbatim
     # by `build` (compiles afterwards) and `generate` (snapshots afterwards).
-    generationScript = ''
+    # `builtins.seq` on the assertion, not string interpolation: the check has
+    # no output to contribute, and interpolating a `throw` into a shell snippet
+    # is only reached when that snippet is forced, which is later and further
+    # from the cause.
+    generationScript = builtins.seq assertNoLegacyHeaderDeps ''
       # Remember source dir — cmake's out-of-tree build will cd into build/
       export LOGOS_MODULE_SOURCE_DIR="$(pwd)"
 
       # Create generated_code directory for generated files
       mkdir -p ./generated_code
-
-      # Copy include files from module dependencies
-      ${moduleDepIncludes}
 
       # Copy external libraries
       ${externalLibCopies}
