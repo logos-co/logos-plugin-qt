@@ -19,7 +19,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, logos-module, logos-protocol, logos-lidl, ... }:
+  outputs = { self, nixpkgs, logos-nix, logos-module, logos-protocol, logos-lidl, ... }:
     let
       systems = [ "aarch64-darwin" "x86_64-darwin" "aarch64-linux" "x86_64-linux" ];
 
@@ -27,6 +27,16 @@
         inherit system;
         pkgs = import nixpkgs { inherit system; };
       });
+
+      # forAllSystems plus the "x86_64-windows" pseudo-system — the same helper
+      # logos-protocol and logos-lidl already build their Windows legs with, so
+      # `pkgs` there is logos-nix's mingw-UCRT cross set (Qt 6.11.1) and the
+      # derivation's `system` is still the BUILD platform, x86_64-linux.
+      #
+      # Only `packages` uses it, and only for the host runtime. `checks` cannot:
+      # every check either RUNS what it built or loads a plugin, and a PE does
+      # not run on the Linux builder. A cross devShell offers nothing either.
+      forAllTargets = logos-nix.lib.forAllTargets;
 
       # Raw backend lib — no deps baked in.
       # Callers (logos-module-builder) inject logosModule per call.
@@ -78,7 +88,15 @@
       # fixture also instantiates them and cannot reach the builder, so it kept
       # a byte-identical second copy with nothing comparing the two. See
       # cmake/README.md.
-      packages = forAllSystems ({ pkgs, system, ... }: {
+      #
+      # `packages` is the ONLY output keyed by forAllTargets, so a Windows
+      # consumer — logos-liblogos, and through it logos-basecamp — can name
+      # `logos-plugin-qt.packages.x86_64-windows.logos-qt-host` the same way it
+      # names every other system. Until it could, the whole Windows leg of
+      # logos-liblogos failed at EVALUATION with `attribute 'x86_64-windows'
+      # missing`: this repo took ownership of the Qt host runtime from
+      # logos-qt-sdk, which HAD a Windows target, and did not bring one with it.
+      packages = forAllTargets ({ pkgs, system, ... }: {
         # The LogosView*.in templates, as a nameable output. `logos_module()`
         # gets the same directory through LOGOS_VIEW_TEMPLATE_DIR; this output
         # exists so a consumer (logos-module-builder's view-interface-abi
@@ -95,16 +113,28 @@
           protocolLib = logos-protocol.packages.${system}.logos-protocol-lib;
         };
 
+        # `default` was the CMake module (a cheap pure-Nix copy) until that
+        # output went away. The host runtime is what this repo now produces
+        # that a consumer can actually build, so `nix build` on it builds that.
+        #
+        # `system`, not `pkgs.system`: under cross the latter is the BUILD
+        # platform, so packages.x86_64-windows.default would have aliased the
+        # x86_64-linux host runtime — an ELF filed under the Windows key.
+        default = self.packages.${system}.logos-qt-host;
+      }
+      # HOST TOOL, so it exists for real systems only. The generator is EXECUTED
+      # during a consumer's build to emit the plugin glue, which is why every
+      # caller in logos-module-builder already reaches for it as
+      # `packages.${buildSystemFor system}.logos-qt-host-generator` — on the
+      # Windows target that resolves to x86_64-linux. Publishing a PE under
+      # `packages.x86_64-windows` would offer the Linux builder a binary it
+      # cannot run, so the attribute is simply absent there instead.
+      // nixpkgs.lib.optionalAttrs (system != "x86_64-windows") {
         logos-qt-host-generator = import ./nix/qt-host-generator.nix {
           inherit pkgs;
           src = ./qt-host-generator;
           logos-lidl = logos-lidl.packages.${system}.logos-lidl;
         };
-
-        # `default` was the CMake module (a cheap pure-Nix copy) until that
-        # output went away. The host runtime is what this repo now produces
-        # that a consumer can actually build, so `nix build` on it builds that.
-        default = self.packages.${pkgs.system}.logos-qt-host;
       });
 
       # Tests
