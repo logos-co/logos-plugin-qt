@@ -209,10 +209,20 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
         // QThread carries a Qt event dispatcher that can drive those — an adopted
         // std::thread cannot pump the QtRO socket, so such calls would hang. The
         // client stays owned by this worker (inline, no cross-thread marshaling).
-        if (!resultMethods.isEmpty())
-            s << "    QThread* worker = QThread::create([method, dumped, isResultMethod, callId, eventCb]() {\n";
-        else
-            s << "    QThread* worker = QThread::create([method, dumped, callId, eventCb]() {\n";
+        // Built from the same two conditions that decide whether the locals
+        // exist at all, rather than hand-written per case. There are FOUR
+        // combinations of (has void methods, has result methods) and only two
+        // hand-written lists, so `void && !result` captured neither flag and
+        // named `isVoidMethod` in the body regardless — a module with a void
+        // method and no LogosResult method did not compile under
+        // concurrency:"multi". A capture-default is deliberately still not used:
+        // this lambda outlives the frame, so every capture has to be by value on
+        // purpose.
+        QString workerCaptures = "method, dumped";
+        if (!voidMethods.isEmpty())   workerCaptures += ", isVoidMethod";
+        if (!resultMethods.isEmpty()) workerCaptures += ", isResultMethod";
+        workerCaptures += ", callId, eventCb";
+        s << "    QThread* worker = QThread::create([" << workerCaptures << "]() {\n";
         s << "        char* result = logos_module_dispatch(method.c_str(), dumped.c_str());\n";
         s << "        QVariant value;\n";
         s << "        if (result) {\n";

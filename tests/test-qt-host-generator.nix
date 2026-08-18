@@ -136,6 +136,41 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   grep -q "eventCb(logos::callCompleteEvent(), QVariantList{ callId, value });" $cm \
     || { echo "multi source does not push the completion event"; exit 1; }
 
+  # The worker lambda outlives the frame that builds it, so it takes NO
+  # capture-default and every local its body reads has to be named explicitly.
+  # This suite only ever grepped the emitted text and never compiled it, so a
+  # capture list that omitted one read the body still made was invisible here
+  # and surfaced as a module build failure instead. The contract above has both
+  # a void method and a result method, so both flags must be captured.
+  worker_capture=$(grep -o 'QThread::create(\[[^]]*\]' $cm)
+  for flag in isVoidMethod isResultMethod; do
+    printf '%s' "$worker_capture" | grep -q "$flag" \
+      || { echo "multi worker lambda reads $flag but does not capture it: $worker_capture"; exit 1; }
+  done
+
+  # void WITHOUT result — the fourth combination, and the one neither
+  # hand-written capture list could express: it captured neither flag while the
+  # body still named isVoidMethod, so `concurrency: "multi"` on any module with
+  # a void method and no result method did not compile at all.
+  cat > voidonly.lidl <<'EOF'
+  module void_only_probe {
+    version "1.0.0"
+
+    method doVoid() -> void
+    method echoInt(v: int) -> int
+  }
+  EOF
+  logos-qt-host-generator --lidl voidonly.lidl --concurrency multi --output-dir out-voidonly
+  cv=out-voidonly/void_only_probe_cdylib_glue.cpp
+  vo_capture=$(grep -o 'QThread::create(\[[^]]*\]' $cv)
+  printf '%s' "$vo_capture" | grep -q "isVoidMethod" \
+    || { echo "void-only multi lambda does not capture isVoidMethod: $vo_capture"; exit 1; }
+  # `if`, not `&& { ...; }` — the negative assertion's SUCCESS path is a failing
+  # grep, and a chain ending non-zero would abort the builder under set -e.
+  if printf '%s' "$vo_capture" | grep -q "isResultMethod"; then
+    echo "void-only multi lambda captures isResultMethod, which it never declares"; exit 1
+  fi
+
   # ---- refusals ---------------------------------------------------------
   # No contract at all, and an unparseable one, must both FAIL rather than
   # emit half a plugin.
