@@ -34,7 +34,9 @@ let
     libExt = common.getLibExtension pkgs;
     staticDepNames = builtins.map (e: e.name) staticDeps;
 
-    # Pick the API style up-front from this module's `interface`. Each
+    # Pick the API style up-front from this module's `interface` (and, since
+    # the consumer axis became declarable, from `codegen.consumer_api_style`
+    # when it is set — see `apiStyle` below). Each
     # dep already ships pre-built header variants (`.headers-qt` and
     # `.headers-lp` — see mkLogosModule.nix's `buildHeaders` calls),
     # so we just copy from the right one. No codegen at consume time.
@@ -47,10 +49,89 @@ let
     # too: their LogosUiPluginContext.modules() dep wrappers come out Qt-typed,
     # matching the view, with no std<->Qt conversions at the boundary.
     # Everything else (legacy / handcrafted Qt) is Qt-typed as well.
-    apiStyle = if config.interface == "cdylib" then "lp"
-               else if config.interface == "universal" && (config.type or "core") != "ui_qml" then "lp"
-               else "qt";
+    #
+    # ── Where the wrappers LAND, which is the fact everything below turns on ──
+    #
+    # `packagedAsCdylib` is true for exactly the shapes whose generated consumer
+    # wrappers are compiled into an image that ALSO exports the module-impl C
+    # ABI (`logos_module_impl.h`) — the cdylib provider surface. It is the same
+    # expression logos-module-builder's modulePreConfigure.autoCodegen branches
+    # on when it decides to emit that surface, and it is repeated here rather
+    # than only read off `config` so this backend still classifies a module
+    # correctly for a caller that predates the metadata key.
+    #
+    # What it decides is where the image's auth TOKENS come from:
+    #
+    #   cdylib     — `logos_module_accept_token` -> `lp_token_save`, into the
+    #                very TokenManager this image's outbound lp client reads.
+    #   Qt plugin  — the host writes tokens to the TokenManager in ITS image;
+    #                a plugin links its own copy of the protocol library, so
+    #                they must be MIRRORED across by
+    #                logos::qt::LpBridge::syncTokens, which is installed only
+    #                by `forTarget(api, ...)` — i.e. only where a LogosAPI is
+    #                held.
+    packagedAsCdylib =
+      config.interface == "cdylib"
+      || (config.interface == "universal" && (config.type or "core") != "ui_qml");
+
+    # `codegen.consumer_api_style` (validated in logos-module-builder's
+    # parseMetadata.nix, surfaced as `config.consumer_api_style`) may override
+    # the derived surface. Absent — an older builder, or a direct caller — the
+    # derived value is character-for-character what this file computed before
+    # the key existed.
+    apiStyle =
+      let declared = config.consumer_api_style or null;
+      in if declared != null then declared
+         else if packagedAsCdylib then "lp" else "qt";
     isQt = apiStyle == "qt";
+
+    # ── The gate, second copy ────────────────────────────────────────────────
+    #
+    # parseMetadata.nix refuses this combination for every module it parses;
+    # this is the backend's own refusal, for a caller that hands `config` in by
+    # some other route. Same rule, same reason: the lp wrappers hold no
+    # LogosAPI, so in a Qt plugin image nothing populates the TokenManager they
+    # read and every outbound call goes out unauthenticated — silently.
+    #
+    # The `qt` direction needs no refusal, and that asymmetry is the design:
+    # `qt` is the DEFAULT for a Qt plugin, and `--binding origin` — the part
+    # that is unsafe there — is not selectable at all. It is derived below as
+    # `qt AND packagedAsCdylib`, so no metadata can reach it from the wrong
+    # side.
+    assertConsumerApiStyle =
+      if apiStyle != "lp" || packagedAsCdylib then null
+      else throw ''
+        logos-plugin-qt: module '${config.name}' asks for the lp (Qt-free) consumer surface,
+        but its dependency wrappers compile into a Qt PLUGIN object.
+
+        interface = "${config.interface}", type = "${config.type or "core"}" — that image holds a
+        LogosAPI and exports no `logos_module_accept_token`, so nothing would ever populate the
+        TokenManager the lp wrappers read. Every outbound call would present an empty auth token
+        and come back as a default value with no error surfaced.
+
+        Fix the `codegen.consumer_api_style` key in that module's metadata.json (drop it to get
+        this module's default, "qt"), or make the module a cdylib provider
+        (`interface: "universal"` / `interface: "cdylib"`).
+      '';
+
+    # ── `--binding origin` ───────────────────────────────────────────────────
+    #
+    # Qt-typed wrappers that hold NO LogosAPI and state this module's own name
+    # as the call origin (logos::qt::LpBridge::forOrigin). Reachable ONLY as the
+    # conjunction below, never from metadata directly:
+    #
+    #   isQt              — there is a Qt-typed wrapper to bind at all; the lp
+    #                       wrappers have their own origin baking and no bridge.
+    #   packagedAsCdylib  — the image gets its tokens over the C ABI, so the
+    #                       NULL sync hook `forOrigin` installs costs nothing.
+    #                       In a Qt plugin the same null hook IS the bug
+    #                       `syncTokens` was written to fix.
+    #
+    # Emitted as a suffix on an existing flag rather than as its own line so the
+    # generated shell snippet is byte-identical when it is empty — every module
+    # that is not origin-bound must hash exactly as it did before.
+    originBound = isQt && packagedAsCdylib;
+    bindingFlag = lib.optionalString originBound " --binding origin";
 
     # The TRANSITIONAL header-copy fallback is GONE.
     #
@@ -167,7 +248,7 @@ let
           '';
       in synthMeta + ''
         logos-qt-generator ${inputArgs} \
-          --backend consumer --module ${nameArg} --bind ${e.bind} \
+          --backend consumer --module ${nameArg} --bind ${e.bind}${bindingFlag} \
           --output-dir ./generated_code
         if [ ! -s "./generated_code/${e.name}_api.h" ] || [ ! -s "./generated_code/${e.name}_api.cpp" ]; then
           echo "Error: logos-qt-generator emitted no consumer wrapper for '${e.name}' (${e.path})" >&2
@@ -226,7 +307,7 @@ let
     '' else ''
       _umbrella_dir="$(mktemp -d)"
       logos-cpp-generator --metadata metadata.json --general-only \
-        --api-style qt \
+        --api-style qt${bindingFlag} \
         --output-dir "$_umbrella_dir" ${interfaceArgs}
       for _u in logos_sdk.h logos_sdk.cpp; do
         if [ ! -s "$_umbrella_dir/$_u" ]; then
@@ -298,7 +379,7 @@ let
     # no output to contribute, and interpolating a `throw` into a shell snippet
     # is only reached when that snippet is forced, which is later and further
     # from the cause.
-    generationScript = builtins.seq assertNoLegacyHeaderDeps ''
+    generationScript = builtins.seq assertConsumerApiStyle (builtins.seq assertNoLegacyHeaderDeps ''
       # Remember source dir — cmake's out-of-tree build will cd into build/
       export LOGOS_MODULE_SOURCE_DIR="$(pwd)"
 
@@ -314,7 +395,7 @@ let
       # C ABI) for core universal + cdylib modules, qt (QString / QVariantList
       # / LogosResult) for ui_qml backends and handcrafted Qt modules. Which
       # generator emits what is `generatorCalls` above.
-      echo "Running logos-cpp-generator (api-style=${apiStyle})..."
+      echo "Running logos-cpp-generator (api-style=${apiStyle}${lib.optionalString originBound ", binding=origin"})..."
       ${lib.optionalString (interfaceDeps != [])
         ("echo " + lib.escapeShellArg ("Binding interfaces: "
           + lib.concatMapStringsSep ", " (e: e.name) interfaceDeps))}
@@ -349,9 +430,9 @@ let
 
       # Run any custom preConfigure hook
       ${preConfigure}
-    '';
+    '');
   in {
-    inherit generationScript libExt pluginFilename apiStyle;
+    inherit generationScript libExt pluginFilename apiStyle originBound;
   };
 
 in {

@@ -170,6 +170,15 @@
           inherit (rawLib) buildHeaders;
         };
 
+        # WHICH consumer surface buildPlugin picks, and that `--binding origin`
+        # cannot be reached from a Qt PLUGIN's metadata. That flag turns off the
+        # LpBridge token mirror; correct in a cdylib image, a silent
+        # authentication failure in a plugin one.
+        consumer-api-style-gate = import ./tests/test-consumer-api-style-gate.nix {
+          inherit pkgs;
+          inherit (rawLib) generate;
+        };
+
         # The Qt host runtime compiles and installs a usable CMake package.
         qt-host = self.packages.${system}.logos-qt-host;
 
