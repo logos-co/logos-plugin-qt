@@ -49,7 +49,12 @@ rec {
 
   # CMake flags for Qt plugin builds.
   # Only includes logosModule (for interface.h).
-  # SDK flags are added by the builder layer, not here.
+  #
+  # Everything else — SDK roots, and LOGOS_VIEW_TEMPLATE_DIR for a ui_qml
+  # module — is added by the builder layer through `extraCmakeFlags`, not
+  # here. This backend knows about Qt and the plugin interface; it does not
+  # know what a view plugin is, and must not name a template directory it no
+  # longer owns.
   commonCmakeFlags = { logosModule }: [
     "-GNinja"
     "-DLOGOS_MODULE_ROOT=${logosModule}"

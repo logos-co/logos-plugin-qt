@@ -10,7 +10,7 @@
 # The logos-cpp-sdk (generator, SDK lib, headers) is added by the caller
 # (logos-module-builder) via extraNativeBuildInputs / extraBuildInputs / env.
 #
-{ nixpkgs, lib, backendRoot }:
+{ nixpkgs, lib }:
 
 let
   common = import ./common.nix { inherit lib; };
@@ -45,9 +45,16 @@ in {
       nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
       buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
       cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
+      # point it at its own root, which shipped a second copy of
+      # LogosModule.cmake; the caller only overrode it when the module itself
+      # carried one, so ui_qml plugins silently configured with the backend's
+      # copy. The CMake module belongs to logos-module-builder, which now always
+      # passes this in extraEnv. With no default, a caller that forgets gets a
+      # loud FATAL_ERROR from the module's CMakeLists instead of a build against
+      # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -87,9 +94,16 @@ in {
       nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
       buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
       cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
+      # point it at its own root, which shipped a second copy of
+      # LogosModule.cmake; the caller only overrode it when the module itself
+      # carried one, so ui_qml plugins silently configured with the backend's
+      # copy. The CMake module belongs to logos-module-builder, which now always
+      # passes this in extraEnv. With no default, a caller that forgets gets a
+      # loud FATAL_ERROR from the module's CMakeLists instead of a build against
+      # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        LOGOS_MODULE_BUILDER_ROOT = "${backendRoot}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -115,10 +129,14 @@ in {
     pluginLib,
     logosSdk,
     apiStyle ? "qt",
-    # Path to this module's LIDL contract (or null). Used ONLY when the plugin
-    # cannot be introspected — i.e. cross-compilation, where the builder cannot
-    # load the host binary it just produced. Native builds ignore it entirely.
+    # Path to this module's LIDL contract (or null). This is the PRIMARY input
+    # for the qt surface — a module that publishes a contract has its wrapper
+    # generated from it and is never introspected. Only a module with no
+    # contract falls back to reading its compiled plugin.
     contractLidl ? null,
+    # logos-qt-generator (build-platform). Required to take the contract-driven
+    # qt path; null demotes it to the legacy emitter, loudly.
+    qtGenerator ? null,
   }:
   let
     commonArgs = {
@@ -130,12 +148,16 @@ in {
       };
     };
   in mkBuildHeaders.build {
-    inherit pkgs src config commonArgs logosSdk apiStyle contractLidl;
+    inherit pkgs src config commonArgs logosSdk apiStyle contractLidl qtGenerator;
     lib = pluginLib;
   };
 
   # Dev shell dependencies — Qt only.
-  # SDK env vars are added by the caller (logos-module-builder).
+  # SDK env vars are exported by the caller (logos-module-builder): it owns
+  # cmake/LogosModule.cmake (LOGOS_MODULE_BUILDER_ROOT) and, since the view
+  # templates moved to logos-view-module, LOGOS_VIEW_TEMPLATE_DIR as well.
+  # A ui_qml module's dev shell gets that export from the builder's shellHook,
+  # which splices this one in; without it LogosModule.cmake hard-errors.
   devShellInputs = pkgs: {
     logosModule ? null,
   }: {
@@ -143,7 +165,6 @@ in {
     buildInputs = common.commonBuildInputs pkgs;
     shellHook = ''
       ${if logosModule != null then ''export LOGOS_MODULE_ROOT="${logosModule}"'' else ""}
-      export LOGOS_MODULE_BUILDER_ROOT="${backendRoot}"
     '';
   };
 

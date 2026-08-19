@@ -1,5 +1,30 @@
 {
   "nodes": {
+    "logos-lidl": {
+      "inputs": {
+        "logos-nix": [
+          "logos-nix"
+        ],
+        "nixpkgs": [
+          "logos-lidl",
+          "logos-nix",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786415321,
+        "narHash": "sha256-Oe98SavQSVGBIY7WIc8RQ5l+Bl4KLsdmjb+PyscfdNw=",
+        "owner": "logos-co",
+        "repo": "logos-lidl",
+        "rev": "ffeebf2e90fa0c65e8c486988271fe0ca029d1e1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "logos-co",
+        "repo": "logos-lidl",
+        "type": "github"
+      }
+    },
     "logos-module": {
       "inputs": {
         "logos-nix": "logos-nix",
@@ -58,6 +83,31 @@
       "original": {
         "owner": "logos-co",
         "repo": "logos-nix",
+        "type": "github"
+      }
+    },
+    "logos-protocol": {
+      "inputs": {
+        "logos-nix": [
+          "logos-nix"
+        ],
+        "nixpkgs": [
+          "logos-protocol",
+          "logos-nix",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787107309,
+        "narHash": "sha256-oNfr0T6OrD1D56rf1brXH+9hJoJvTaPpvUdy/d62SPs=",
+        "owner": "logos-co",
+        "repo": "logos-protocol",
+        "rev": "f4407ff4854bdaf486182547af5b55f4a0f55229",
+        "type": "github"
+      },
+      "original": {
+        "owner": "logos-co",
+        "repo": "logos-protocol",
         "type": "github"
       }
     },
@@ -127,8 +177,10 @@
     },
     "root": {
       "inputs": {
+        "logos-lidl": "logos-lidl",
         "logos-module": "logos-module",
         "logos-nix": "logos-nix_2",
+        "logos-protocol": "logos-protocol",
         "nixpkgs": [
           "logos-nix",
           "nixpkgs"
