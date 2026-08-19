@@ -1,9 +1,11 @@
 # Builds logos-qt-host — the Qt HOST RUNTIME a Logos Qt plugin links against:
 # LogosAPI (the object handed to initLogos), LogosAPIProvider (the transport
 # hosts, ModuleProxy/handshake publication and token-validator injection),
-# LogosProviderBase + the LOGOS_PROVIDER/LOGOS_METHOD macros, and the legacy
-# QMetaObject adapter. A static library plus its headers and CMake package
-# config, so a plugin build can `find_package(logos-qt-host)`.
+# LogosProviderBase (the base the generated <name>_cdylib_glue.cpp derives from;
+# the LOGOS_PROVIDER/LOGOS_METHOD macros beside it are vestigial — the
+# --provider-header scanner that read them is gone), and the legacy QMetaObject
+# adapter. A static library plus its headers and CMake package config, so a
+# plugin build can `find_package(logos-qt-host)`.
 #
 # Builds for the x86_64-windows cross target too. The two differences that
 # target needs are gated on `isWindows` and interpolate to nothing otherwise, so

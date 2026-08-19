@@ -5,8 +5,11 @@
 
 // The LogosProviderObject universal-interface defaults and Std bridges moved
 // to logos-protocol (logos_provider_interface.cpp) together with the abstract
-// interface. What remains here is LogosProviderBase — the developer-facing
-// base class — because it talks to LogosAPI, which layers above the protocol.
+// interface. What remains here is LogosProviderBase — the base the generated
+// Qt plugin glue (<name>_cdylib_glue.cpp) derives from — because it talks to
+// LogosAPI, which layers above the protocol. It used to be hand-derived by
+// `interface: "provider"` module code; that interface is gone, and module code
+// now derives from logos-cpp-sdk's Qt-free LogosModuleContext instead.
 
 // ---------------------------------------------------------------------------
 // LogosProviderBase

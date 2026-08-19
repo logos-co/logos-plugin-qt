@@ -284,7 +284,9 @@ let
     #   * `--dep` is dropped. Those flags ONLY drive wrapper emission; the
     #     umbrella's members come from metadata.json's `dependencies` array
     #     (main.cpp reads `deps` from the metadata and hands THAT to
-    #     writeUmbrellaHeaderFromDeps), so dropping them costs nothing.
+    #     generator_lib's makeUmbrellaHeaderFromDeps — the directory-scraping
+    #     writeUmbrellaHeader/writeUmbrellaSource pair that used to sit beside
+    #     it is deleted), so dropping them costs nothing.
     #
     #   * `--interface` is kept. The umbrella's `bind_<name>(...)` factories
     #     come from the interface NAMES, and a cross-repo interface (an entry

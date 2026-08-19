@@ -11,8 +11,10 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core RemoteObjects)
 # The protocol layer — transports, consumer core, token manager, the abstract
 # LogosProviderObject interface and the lp_* C ABI. This library is the Qt
 # HOST runtime on top of it: the object a Qt plugin is handed (LogosAPI), the
-# provider side that publishes it (LogosAPIProvider), and the provider base
-# classes a generated or hand-written plugin derives.
+# provider side that publishes it (LogosAPIProvider), the provider base the
+# generated <name>_cdylib_glue.cpp derives from (LogosProviderBase), and the
+# QtProviderObject adapter that wraps a legacy Q_INVOKABLE QObject plugin.
+# (Hand-written provider classes — `interface: "provider"` — no longer exist.)
 if(NOT DEFINED LOGOS_PROTOCOL_ROOT)
     if(DEFINED ENV{LOGOS_PROTOCOL_ROOT})
         set(LOGOS_PROTOCOL_ROOT "$ENV{LOGOS_PROTOCOL_ROOT}")

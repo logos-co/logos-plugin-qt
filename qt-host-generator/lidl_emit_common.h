@@ -8,7 +8,9 @@
 // lidlToPascalCase, to derive the plugin class stem from the module name.
 // Twelve lines of definition are a far smaller thing to own than a
 // logos-cpp-sdk input on this repo, so the definition lives here and the
-// backend source stays byte-identical to the copy it came from.
+// backend source needed no rewrite when it came across. (The copy it came
+// from — logos-qt-sdk's qt-generator/lidl_gen_cdylib_glue.cpp — has since been
+// deleted; this is the only one.)
 //
 // This is the same rule every other Logos generator applies to a module name
 // (logos-view-module's view-generator inlines it too); it must not drift, or

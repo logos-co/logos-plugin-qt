@@ -57,17 +57,19 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     grep -q "$sym" $c || { echo "C-ABI forwarding lost: $sym"; exit 1; }
   done
 
-  # ---- drift guard against the OTHER copy of this emitter ------------------
-  # logos-qt-sdk still ships qt-generator/lidl_gen_cdylib_glue.cpp, the same
-  # emitter this file tests. Both compile, both emit loadable glue, so calling
-  # the wrong one is not an error — it silently emits OLDER glue. That is
-  # exactly how the host-services grant below went undelivered for a whole
-  # phase while every build stayed green.
+  # ---- drift guard, kept from when there were TWO copies of this emitter ----
+  # logos-qt-sdk used to ship qt-generator/lidl_gen_cdylib_glue.cpp, the same
+  # emitter this file tests. Both compiled, both emitted loadable glue, so
+  # calling the wrong one was not an error — it silently emitted OLDER glue.
+  # That is exactly how the host-services grant below went undelivered for a
+  # whole phase while every build stayed green.
   #
-  # This asserts the property that made it detectable: the maintained copy
-  # forwards the grant. If someone points the builder back at qt-sdk's
-  # generator, the module build stops producing this line and the assertions
-  # below fail — instead of a module silently coming up unprivileged.
+  # That second copy is GONE: logos-qt-generator deleted `--backend cdylib`
+  # (and `--backend qt` with it) and now refuses either flag, emitting only
+  # `consumer` and `ui`. So a misrouted builder fails loudly today instead of
+  # silently. The assertion below stays anyway — it pins the property that made
+  # the divergence detectable in the first place, which is worth having whether
+  # or not a rival emitter exists.
 
   # ---- the host-services grant --------------------------------------------
   # The grant has to reach the MODULE's image: the host binary and the cdylib

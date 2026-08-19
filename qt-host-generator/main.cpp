@@ -83,8 +83,10 @@ int main(int argc, char* argv[])
     // REFUSE any other, rather than ignoring the flag: callers are migrating
     // from a tool where --backend was required and dispatched on, so silently
     // treating `--backend qt` as cdylib would hand back confidently wrong
-    // artifacts (the qt backend emits <name>_qt_glue.h + _dispatch.cpp +
-    // _events.cpp — different files entirely) with a zero exit status.
+    // artifacts (the qt backend emitted <name>_qt_glue.h + _dispatch.cpp +
+    // _events.cpp — different files entirely; it has since been removed from
+    // logos-qt-generator too, which now emits only `consumer` and `ui`) with a
+    // zero exit status.
     const QString backend = argValue(args, "--backend");
     if (!backend.isEmpty() && backend != QStringLiteral("cdylib")) {
         err << "Error: logos-qt-host-generator only emits the cdylib backend, "

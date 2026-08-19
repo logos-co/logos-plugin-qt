@@ -316,7 +316,10 @@ private:
     mutable QHash<LogosAPIClientCacheKey, LogosAPIClient*> m_clients;
     TokenManager* m_token_manager;
     // ABI note: this private layout is consumed by every plugin that
-    // statically links libsdk. Inserting a field above m_token_manager
+    // statically links the host runtime (the `logos_qt_host` archive this
+    // directory builds; it was called libsdk before the SDK split, and the
+    // same note still stands in logos-protocol's logos_api_client.h).
+    // Inserting a field above m_token_manager
     // shifts its offset and SILENTLY breaks plugins compiled before
     // the change — they read garbage where m_token_manager used to
     // live, getClient() then constructs LogosAPIClients with a bogus

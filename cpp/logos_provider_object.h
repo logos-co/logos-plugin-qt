@@ -15,24 +15,34 @@
 // The abstract LogosProviderObject interface (the provider-side counterpart
 // of LogosObject, wrapped by ModuleProxy) moved to logos-protocol with the
 // transport layer — see logos_provider_interface.h. This header keeps its
-// historical name and continues to carry the developer-facing pieces:
-// LogosProviderBase (which hands a LogosAPI* to module code, hence it lives
-// here above the protocol layer), LogosProviderPlugin, and the
-// LOGOS_PROVIDER / LOGOS_METHOD macros.
+// historical name and continues to carry the Qt-side pieces:
+// LogosProviderBase (which hands a LogosAPI* to the plugin glue above it,
+// hence it lives here above the protocol layer), LogosProviderPlugin, and the
+// now-vestigial LOGOS_PROVIDER / LOGOS_METHOD macros.
 #include "logos_provider_interface.h"
 
 class LogosAPI;
 
 // ---------------------------------------------------------------------------
-// LogosProviderBase — convenience base class for new-API modules
+// LogosProviderBase — the host-side provider base the generated Qt plugin
+// glue derives from
 //
-// Handles framework plumbing so the developer only writes business logic.
-// callMethod() and getMethods() are provided by generated code produced
-// by logos-cpp-generator --provider-header (analogous to Qt MOC).
+// Handles framework plumbing (token, event listener, LogosAPI hand-off) so the
+// generated glue only has to forward calls. callMethod() and getMethods() are
+// supplied by that generated code: logos-qt-host-generator --backend cdylib
+// emits `<name>_cdylib_glue.{h,cpp}` from the module's LIDL contract, and the
+// `<Name>CdylibProvider` in it derives from this class.
+//
+// (It was logos-cpp-generator --provider-header that filled those two slots,
+// from LOGOS_METHOD markers in a hand-written `interface: "provider"` class.
+// That flag is gone — it now exits non-zero pointing at interface: "universal"
+// — and so is the `logos_provider_dispatch.cpp` it wrote. Module code itself no
+// longer subclasses this at all; it derives from logos-cpp-sdk's Qt-FREE
+// LogosModuleContext, and Qt appears only in the generated glue.)
 // ---------------------------------------------------------------------------
 class LogosProviderBase : public LogosProviderObject {
 public:
-    // These two are implemented by generated code (logos_provider_dispatch.cpp):
+    // These two are implemented by generated code (<name>_cdylib_glue.cpp):
     //   QVariant callMethod(const QString& methodName, const QVariantList& args) override;
     //   QJsonArray getMethods() override;
 
@@ -55,10 +65,22 @@ private:
 // visible to existing includers of this header.
 
 // ---------------------------------------------------------------------------
-// Macros — the developer-facing API
+// Macros — VESTIGIAL
+//
+// These were the developer-facing API of `interface: "provider"`: you wrote the
+// provider class by hand, tagged it LOGOS_PROVIDER and each exposed method
+// LOGOS_METHOD, and logos-cpp-generator --provider-header scanned the header to
+// emit the dispatch. That flag was removed (it now refuses, naming
+// interface: "universal"), so NOTHING scans LOGOS_METHOD any more, and no
+// module this repo builds expands LOGOS_PROVIDER — the generated cdylib glue
+// writes the same overrides out longhand. They are kept only so an older
+// translation unit still compiles. A module's plain public methods are now its
+// API; the contract is derived from the impl header named by
+// codegen.impl_class / codegen.impl_header.
 // ---------------------------------------------------------------------------
 
-// LOGOS_PROVIDER: declares providerName/providerVersion and a private typedef.
+// LOGOS_PROVIDER: declares providerName/providerVersion, the callMethod /
+// getMethods overrides the generated dispatch defined, and a private typedef.
 // Place at the top of the class body (like Q_OBJECT).
 #define LOGOS_PROVIDER(ClassName, Name, Version)            \
 public:                                                     \
@@ -69,9 +91,10 @@ public:                                                     \
 private:                                                    \
     using _LogosProviderThisType = ClassName;
 
-// LOGOS_METHOD: marks a method as callable by the framework.
-// Expands to nothing — scanned by logos-cpp-generator to produce
-// callMethod() dispatch and getMethods() metadata (like Q_INVOKABLE + MOC).
+// LOGOS_METHOD: marked a method as callable by the framework.
+// Expands to nothing, and now that is all it does: the scanner that read it
+// (logos-cpp-generator --provider-header) was removed, so this is a no-op
+// retained for source compatibility only.
 #define LOGOS_METHOD
 
 #endif // LOGOS_PROVIDER_OBJECT_H
