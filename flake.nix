@@ -9,15 +9,15 @@
     nixpkgs.follows = "logos-nix/nixpkgs";
     # The transport / consumer / token layer logos-qt-host is the Qt face of.
     #
-    # Rev-pinned, not master-tracking: LogosAPI is now constructible on its own
-    # token store, which needs TokenManager::forIdentity / isolateIdentity from
-    # logos-protocol's feat/per-client-token-store branch. Those are NOT on
-    # protocol master (still LOGOS_PROTOCOL_VERSION_MINOR 2), and the cdylib
-    # glue's grant forwarding is guarded on MINOR >= 3, so a master-tracking pin
-    # both fails to compile logos_api.cpp and silently drops the grant. Re-point
-    # at master once that branch merges.
+    # Master-tracking. This was rev-pinned to feat/per-client-token-store while
+    # TokenManager::forIdentity / isolateIdentity — which LogosAPI needs to be
+    # constructible on its own token store — lived only on that branch, with
+    # protocol master at LOGOS_PROTOCOL_VERSION_MINOR 2. A master-tracking pin
+    # then both failed to compile logos_api.cpp AND silently dropped the grant,
+    # since the cdylib glue's forwarding is guarded on MINOR >= 3. That branch
+    # has merged (logos-protocol#59): master is 0.4.0, so the guard opens.
     logos-protocol = {
-      url = "github:logos-co/logos-protocol/c8bab12834dbf92155b483546875e6078d17c74e";
+      url = "github:logos-co/logos-protocol";
       inputs.logos-nix.follows = "logos-nix";
     };
     # The canonical LIDL frontend logos-qt-host-generator parses contracts with.
