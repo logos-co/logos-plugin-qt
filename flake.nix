@@ -90,12 +90,16 @@
       # builder's build-system contract — it reads LOGOS_API_STYLE,
       # LOGOS_MODULE_GO_STATIC_LIBS, generated_code/ — so it lives there, once.
       #
-      # cmake/ came back for a narrower reason: the four LogosView*.in
-      # templates. Those had the mirror-image problem — they sat next to
-      # LogosModule.cmake in the builder, but this repo's rep-file-plugin
-      # fixture also instantiates them and cannot reach the builder, so it kept
-      # a byte-identical second copy with nothing comparing the two. See
-      # cmake/README.md.
+      # There is no cmake/ directory any more either. It briefly came back to
+      # hold the four LogosView*.in view-plugin templates, which had the
+      # mirror-image problem: a byte-identical second copy of them lived here
+      # with nothing comparing the two. Both copies are now ONE copy, in
+      # logos-view-module — the repo that owns the ui_qml authoring flavour
+      # (LogosViewModule.cmake, the view glue generator, the templates) end to
+      # end. logos-module-builder inputs that repo and hands the directory to
+      # every plugin build as LOGOS_VIEW_TEMPLATE_DIR, so this backend never
+      # names it. What is left here is exclusively what makes a cdylib module
+      # loadable by logos-module-loader-qt.
       #
       # `packages` is the ONLY output keyed by forAllTargets, so a Windows
       # consumer — logos-liblogos, and through it logos-basecamp — can name
@@ -105,16 +109,6 @@
       # missing`: this repo took ownership of the Qt host runtime from
       # logos-qt-sdk, which HAD a Windows target, and did not bring one with it.
       packages = forAllTargets ({ pkgs, system, ... }: {
-        # The LogosView*.in templates, as a nameable output. `logos_module()`
-        # gets the same directory through LOGOS_VIEW_TEMPLATE_DIR; this output
-        # exists so a consumer (logos-module-builder's view-interface-abi
-        # check) can refer to the templates without depending on the layout of
-        # this repo's source tree.
-        logos-view-templates = pkgs.runCommand "logos-view-templates" { } ''
-          mkdir -p $out
-          cp ${./cmake}/LogosView*.in $out/
-        '';
-
         logos-qt-host = import ./nix/qt-host.nix {
           inherit pkgs;
           src = ./.;
@@ -149,11 +143,6 @@
       checks = forAllSystems ({ pkgs, system, ... }: {
         # Build a vanilla Qt plugin with no Logos SDK deps
         vanilla-plugin = import ./tests/test-vanilla-plugin.nix {
-          inherit pkgs;
-          backendCommon = rawLib.common;
-        };
-        # Build a replica factory plugin from a .rep file
-        rep-file-plugin = import ./tests/test-rep-file-plugin.nix {
           inherit pkgs;
           backendCommon = rawLib.common;
         };

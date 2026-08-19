@@ -55,15 +55,6 @@ in {
       # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        # The LogosView*.in templates logos_module(REP_FILE ...) instantiates.
-        # They are owned by THIS repo (see ../cmake/README.md) because
-        # logos-module-builder depends on it and not the reverse — that
-        # direction is what lets the one copy serve both that repo's
-        # LogosModule.cmake and this repo's tests/rep-file-plugin fixture.
-        # Passed as an env var as well as a cmake flag so a module that drives
-        # cmake itself still resolves it; LogosModule.cmake hard-errors when
-        # neither is set rather than falling back to a sibling directory.
-        LOGOS_VIEW_TEMPLATE_DIR = "${common.viewTemplateDir}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -113,15 +104,6 @@ in {
       # whatever this repo happens to contain.
       env = {
         LOGOS_MODULE_ROOT = "${logosModule}";
-        # The LogosView*.in templates logos_module(REP_FILE ...) instantiates.
-        # They are owned by THIS repo (see ../cmake/README.md) because
-        # logos-module-builder depends on it and not the reverse — that
-        # direction is what lets the one copy serve both that repo's
-        # LogosModule.cmake and this repo's tests/rep-file-plugin fixture.
-        # Passed as an env var as well as a cmake flag so a module that drives
-        # cmake itself still resolves it; LogosModule.cmake hard-errors when
-        # neither is set rather than falling back to a sibling directory.
-        LOGOS_VIEW_TEMPLATE_DIR = "${common.viewTemplateDir}";
       } // extraEnv;
       meta = with lib; {
         description = config.description;
@@ -171,8 +153,11 @@ in {
   };
 
   # Dev shell dependencies — Qt only.
-  # SDK env vars, including LOGOS_MODULE_BUILDER_ROOT, are exported by the
-  # caller (logos-module-builder) — it owns cmake/LogosModule.cmake now.
+  # SDK env vars are exported by the caller (logos-module-builder): it owns
+  # cmake/LogosModule.cmake (LOGOS_MODULE_BUILDER_ROOT) and, since the view
+  # templates moved to logos-view-module, LOGOS_VIEW_TEMPLATE_DIR as well.
+  # A ui_qml module's dev shell gets that export from the builder's shellHook,
+  # which splices this one in; without it LogosModule.cmake hard-errors.
   devShellInputs = pkgs: {
     logosModule ? null,
   }: {
@@ -180,10 +165,6 @@ in {
     buildInputs = common.commonBuildInputs pkgs;
     shellHook = ''
       ${if logosModule != null then ''export LOGOS_MODULE_ROOT="${logosModule}"'' else ""}
-      # Same directory the nix build passes in, so a hand-run `cmake` inside a
-      # module's dev shell resolves the templates the way logos_module() does.
-      # Without it a ui_qml module would hit LogosModule.cmake's hard error.
-      export LOGOS_VIEW_TEMPLATE_DIR="${common.viewTemplateDir}"
     '';
   };
 

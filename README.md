@@ -12,7 +12,6 @@ be swapped without touching the module builder or individual modules.
 | `lib` / `rawLib` | The Nix build functions (`buildPlugin`, `generate`, `buildHeaders`, `devShellInputs`, plus `common`). `rawLib` takes its Logos deps as arguments; `lib` pre-fills them from this flake. |
 | `packages.<sys>.logos-qt-host` | The **Qt host runtime** a plugin links: `LogosAPI`, `LogosAPIProvider`, `LogosProviderBase`, the legacy `QtProviderObject` adapter, and `core/interface.h`. Static library, headers, and a `find_package(logos-qt-host)` config. |
 | `packages.<sys>.logos-qt-host-generator` | Emits the Qt plugin glue around a cdylib module's C ABI (`<name>_cdylib_glue.{h,cpp}`) from its LIDL contract. |
-| `packages.<sys>.logos-view-templates` | The four `cmake/LogosView*.in` templates as a nameable output, so a consumer can refer to them without depending on this repo's source layout. |
 
 `logos-qt-host` is also the `default` package.
 
@@ -39,13 +38,25 @@ with the builder's, and the two drifted apart in silence. The CMake module reads
 the builder's own variables (`LOGOS_API_STYLE`, `LOGOS_MODULE_GO_STATIC_LIBS`,
 `generated_code/`), so the builder is where it belongs.
 
-`cmake/` went away with that copy, and has since come back for a narrower
-reason: the four `LogosView*.in` templates `logos_module(REP_FILE ...)`
-instantiates. Those had the mirror-image problem — they sat next to
-`LogosModule.cmake` in the builder, but this repo's `tests/rep-file-plugin`
-fixture also instantiates them and cannot reach the builder, so it kept a
-byte-identical second copy with nothing comparing the two. `cmake/README.md`
-has the full argument. `LogosModule.cmake` did **not** come back with them.
+`cmake/` went away with that copy and is gone for good. It briefly came back to
+hold the four `LogosView*.in` templates `logos_module(REP_FILE ...)`
+instantiates, which had the mirror-image problem — a byte-identical second copy
+of them lived here with nothing comparing the two. Both copies are now one copy,
+in **logos-view-module**, which owns the `ui_qml` authoring flavour end to end:
+the templates, `LogosViewModule.cmake`, the view glue generator, and the
+`.rep`-file replica-factory fixture that proves the plugin an authoring build
+produces still loads and casts. logos-module-builder inputs that repo and hands
+the directory to every plugin build as `LOGOS_VIEW_TEMPLATE_DIR`; this backend
+never names it.
+
+Which is the line this repo now holds to: it handles **exclusively what makes a
+cdylib module loadable by `logos-module-loader-qt`** — the Qt host runtime a
+plugin links, the generator that wraps a cdylib's C ABI in that plugin, and the
+Nix functions that compile and package the result. View-plugin *authoring* is
+somebody else's repo. (`buildPlugin` still packages a
+`<name>_replica_factory` library when a module's build emits one — that is
+plugin packaging of a build artifact, the same as the `_plugin` library beside
+it, and carries no knowledge of where the templates live.)
 
 `lib` / `rawLib` are pure Nix and stay that way: nothing reachable from them
 mentions the two C++ derivations, so a consumer that only wants the build
@@ -57,7 +68,6 @@ functions never realises a Qt or protocol build to get them.
 lib/                  the Nix build functions (buildPlugin, generate, buildHeaders)
 cpp/                  the Qt host runtime library (logos-qt-host)
 core/interface.h      the legacy Qt plugin interface (PluginInterface)
-cmake/                the four LogosView*.in view-plugin templates (see cmake/README.md)
 qt-host-generator/    the cdylib -> Qt-plugin glue emitter
 nix/                  derivations for the two C++ outputs
 tests/                flake checks

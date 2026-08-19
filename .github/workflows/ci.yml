@@ -25,12 +25,6 @@ jobs:
       - name: Build vanilla Qt plugin test
         run: nix build '.#checks.x86_64-linux.vanilla-plugin'
 
-      # The check that instantiates cmake/LogosView*.in. It existed but was
-      # never listed here, so the templates had no CI coverage at all — which
-      # is part of why a duplicate of them could sit in the fixture unnoticed.
-      - name: Build .rep replica factory test
-        run: nix build '.#checks.x86_64-linux.rep-file-plugin'
-
       - name: Header generator guard test
         run: nix build '.#checks.x86_64-linux.header-generator-guard'
 
