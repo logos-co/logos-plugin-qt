@@ -377,6 +377,13 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     // Teardown. The plugin object is what the host reaches by name; the work
     // itself lives behind the C ABI, in the module's own language.
     s << "int " << plugin << "::aboutToUnload()\n{\n";
+    // The DECLARATION stays unguarded: moc emits a call to it, so guarding it
+    // away would be an undefined symbol at link, and the host's by-name lookup
+    // should find the same meta-object surface on every module. Only the BODY
+    // depends on the protocol -- on anything older than 0.5 the two C ABI
+    // symbols do not exist, and answering 0 (Synchronous) is exactly right: a
+    // module whose ABI cannot carry teardown has nothing to wait for.
+    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && LOGOS_PROTOCOL_VERSION_MINOR >= 5\n";
     // Installed BEFORE asking, because a module that finishes inline would
     // otherwise signal into an empty slot and the host would wait out the whole
     // grace period for a module already done.
@@ -391,6 +398,9 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     s << "            QMetaObject::invokeMethod(self, \"unloadFinished\", Qt::QueuedConnection);\n";
     s << "        }, this);\n";
     s << "    return logos_module_about_to_unload();\n";
+    s << "#else\n";
+    s << "    return 0;  // Synchronous: this protocol has no teardown surface\n";
+    s << "#endif\n";
     s << "}\n";
     return c;
 }
