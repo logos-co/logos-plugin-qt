@@ -87,6 +87,20 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
     s << "public:\n";
     s << "    QString name() const override { return QStringLiteral(\"" << module.name << "\"); }\n";
     s << "    QString version() const override { return QStringLiteral(\"" << (module.version.empty() ? QStringLiteral("1.0.0") : qs(module.version)) << "\"); }\n";
+    // Teardown, reached by the host through the META-OBJECT rather than the
+    // vtable. PluginInterface is compiled separately into every module .so, so
+    // adding a virtual there would shift the vtable under every plugin already
+    // built; a plugin without this hook must be a no-op, not undefined
+    // behaviour. `initLogos` is delivered by name for the same reason.
+    //
+    // Returns the LogosShutdown as an int because the host resolves this by
+    // signature string and must not need the SDK enum to do it.
+    s << "    Q_INVOKABLE int aboutToUnload();\n";
+    s << "Q_SIGNALS:\n";
+    s << "    // Emitted when an Asynchronous teardown has finished. The host\n";
+    s << "    // connects to this by name and stops waiting on the first one.\n";
+    s << "    void unloadFinished();\n";
+    s << "public:\n";
     s << "    LogosProviderObject* createProviderObject() override {\n";
     s << "        return new " << className << "CdylibProvider();\n";
     s << "    }\n";
@@ -98,6 +112,7 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
 {
     const QString className = lidlToPascalCase(qs(module.name));
     const QString provider = className + "CdylibProvider";
+    const QString plugin = className + "CdylibPlugin";
 
     // Which methods return StdLogosResult — the glue re-materializes the Qt
     // LogosResult QVariant callers expect on the wire.
@@ -357,6 +372,25 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     s << "        obj->property(\"modulePath\").toString().toUtf8().constData(),\n";
     s << "        obj->property(\"instanceId\").toString().toUtf8().constData(),\n";
     s << "        obj->property(\"instancePersistencePath\").toString().toUtf8().constData());\n";
+    s << "}\n\n";
+
+    // Teardown. The plugin object is what the host reaches by name; the work
+    // itself lives behind the C ABI, in the module's own language.
+    s << "int " << plugin << "::aboutToUnload()\n{\n";
+    // Installed BEFORE asking, because a module that finishes inline would
+    // otherwise signal into an empty slot and the host would wait out the whole
+    // grace period for a module already done.
+    //
+    // The trampoline runs on whichever thread the module finished on, so it
+    // must not touch the plugin directly -- QMetaObject::invokeMethod with a
+    // queued connection marshals the emission back to the plugin's thread,
+    // which is where the host is waiting.
+    s << "    logos_module_set_unload_done_callback(\n";
+    s << "        [](void* userData) {\n";
+    s << "            auto* self = static_cast<" << plugin << "*>(userData);\n";
+    s << "            QMetaObject::invokeMethod(self, \"unloadFinished\", Qt::QueuedConnection);\n";
+    s << "        }, this);\n";
+    s << "    return logos_module_about_to_unload();\n";
     s << "}\n";
     return c;
 }
