@@ -184,5 +184,40 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     echo "generator accepted an unparseable contract"; exit 1
   fi
 
+  # ---- teardown -------------------------------------------------------
+  #
+  # The host reaches the plugin through the META-OBJECT, so the hook has to be
+  # Q_INVOKABLE on the plugin class and the completion has to be a signal. A
+  # plain method compiles and is silently unreachable, which is the failure this
+  # guards: teardown would look wired and never fire.
+  grep -q "Q_INVOKABLE int aboutToUnload();" $h \
+    || { echo "plugin class does not expose aboutToUnload() to the meta-object"; exit 1; }
+  grep -q "void unloadFinished();" $h \
+    || { echo "plugin class has no unloadFinished() signal"; exit 1; }
+  grep -q "Q_SIGNALS:" $h \
+    || { echo "unloadFinished() is not declared as a signal"; exit 1; }
+
+  # The work itself lives behind the C ABI, in the module's own language.
+  grep -q "int SampleProbeCdylibPlugin::aboutToUnload()" $c \
+    || { echo "no plugin-side aboutToUnload body"; exit 1; }
+  grep -q "return logos_module_about_to_unload();" $c \
+    || { echo "plugin does not forward teardown across the C ABI"; exit 1; }
+
+  # Ordering, and it is load-bearing: the completion callback must be installed
+  # BEFORE the module is asked to unload. An impl that finishes inline would
+  # otherwise signal into an empty slot, and the host would wait out its whole
+  # grace period for a module that was already done.
+  set_line=$(grep -n "logos_module_set_unload_done_callback" $c | head -1 | cut -d: -f1)
+  ask_line=$(grep -n "return logos_module_about_to_unload();" $c | head -1 | cut -d: -f1)
+  if [ -z "$set_line" ] || [ -z "$ask_line" ] || [ "$set_line" -ge "$ask_line" ]; then
+    echo "completion callback is not installed before the unload request"; exit 1
+  fi
+
+  # The callback fires on whichever thread the module finished on, so it must
+  # not touch the plugin directly -- a queued invocation marshals the emission
+  # back to the thread the host is waiting on.
+  grep -q "Qt::QueuedConnection" $c \
+    || { echo "unloadFinished is emitted without marshalling to the plugin thread"; exit 1; }
+
   touch $out
 ''
