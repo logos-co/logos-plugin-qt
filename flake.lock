@@ -98,11 +98,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787262823,
+        "lastModified": 1787264278,
         "narHash": "sha256-JTREoJn2kjQmYyYHg2RQb4oX74EqCnfp/c7By2+MUmI=",
         "owner": "logos-co",
         "repo": "logos-protocol",
-        "rev": "5e9dafcb6bc0dedcc63763eef1009c6919cef8d6",
+        "rev": "9664ae219decff73e87d4dbefe6c2e4309752b5e",
         "type": "github"
       },
       "original": {
