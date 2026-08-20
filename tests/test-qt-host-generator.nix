@@ -213,6 +213,16 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     echo "completion callback is not installed before the unload request"; exit 1
   fi
 
+  # The teardown pair arrived in logos-protocol 0.5, so the BODY is guarded --
+  # a module built against an older protocol has no such C symbols and would
+  # fail to link on generated code its author never wrote. The DECLARATION is
+  # deliberately NOT guarded: moc emits a call to it, and the host's by-name
+  # lookup should find the same meta-object surface on every module.
+  grep -q "LOGOS_PROTOCOL_VERSION_MINOR >= 5" $c \
+    || { echo "teardown body is not guarded on the protocol that carries it"; exit 1; }
+  grep -q "LOGOS_PROTOCOL_VERSION_MINOR" $h \
+    && { echo "the aboutToUnload DECLARATION must not be guarded away"; exit 1; }
+
   # The callback fires on whichever thread the module finished on, so it must
   # not touch the plugin directly -- a queued invocation marshals the emission
   # back to the thread the host is waiting on.
