@@ -171,6 +171,18 @@
         # The Qt host runtime compiles and installs a usable CMake package.
         qt-host = self.packages.${system}.logos-qt-host;
 
+        # logos_qt_host_shared must OWN LogosAPI and BORROW everything
+        # logos-protocol owns. The consumer-side symbol gate cannot see this:
+        # a shared qt-host that linked the STATIC protocol archive would embed
+        # its own TokenManager, and the gate would treat that library as a
+        # provider and pass, with the duplicate one layer below anything it
+        # inspects. One wrong word in target_link_libraries, and it builds,
+        # links, installs and loads.
+        shared-runtime-layering = import ./tests/test-shared-runtime-layering.nix {
+          inherit pkgs;
+          qtHost = self.packages.${system}.logos-qt-host;
+        };
+
         # Drive the glue generator over a real contract and assert on the
         # emitted C++.
         qt-host-generator = import ./tests/test-qt-host-generator.nix {
