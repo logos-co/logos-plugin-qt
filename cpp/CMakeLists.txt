@@ -53,6 +53,12 @@ set(QT_HOST_SOURCES
     # logos::qtArgDecode. Carrying the legacy adapter means carrying this.
     logos_qt_arg_decode.cpp
     logos_qt_arg_decode.h
+    # The host side of the module teardown hook. Not a transport concern, but
+    # the surface it reaches a plugin by ("aboutToUnload" / "unloadFinished")
+    # is EMITTED by this repo's qt-host-generator, so consumer and emitter
+    # stay under one test -- see tests/test-unload-contract.nix.
+    logos_plugin_unload.cpp
+    logos_plugin_unload.h
 )
 
 add_library(logos_qt_host STATIC ${QT_HOST_SOURCES})
@@ -189,6 +195,7 @@ set(QT_HOST_PUBLIC_HEADERS
     logos_provider_object.h
     qt_provider_object.h
     logos_qt_arg_decode.h
+    logos_plugin_unload.h
 )
 
 # Headers keep their historical names so existing `#include "logos_api.h"`
