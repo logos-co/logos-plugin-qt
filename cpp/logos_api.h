@@ -86,15 +86,22 @@ inline size_t qHash(const LogosAPIClientCacheKey& k, size_t seed = 0) noexcept
  * 
  * This class initializes and keeps instances of the client provider and token manager.
  *
- * LOGOS_SHARED_API because this is the object handed across the DLL boundary:
- * the host constructs a LogosAPI inside liblogos_core and passes the pointer to
- * the UI plugin through PluginInterface::logosAPI. Its constructor caches
- * `&TokenManager::instance()`, so on PE a plugin that links its own copy of
- * logos_api.cpp.obj caches a DIFFERENT singleton than the one the host wrote
- * the token into. Importing instead of re-linking is what makes the two agree.
+ * Marked because this is the object handed across the DLL boundary: the host
+ * constructs a LogosAPI and passes the pointer to the UI plugin through
+ * PluginInterface::logosAPI. Its constructor caches `&TokenManager::instance()`,
+ * so an image that links its own copy of logos_api.cpp caches a DIFFERENT
+ * singleton than the one the host wrote the token into. Importing instead of
+ * re-linking is what makes the two agree.
+ *
+ * LOGOS_QT_HOST_API, not LOGOS_SHARED_API, because LogosAPI is owned by THIS
+ * library while TokenManager and LogosAPIClient are owned by logos-protocol.
+ * While building logos_qt_host_shared the first must be EXPORTED and the second
+ * two IMPORTED, and one macro cannot say both in the same translation unit. Off
+ * Windows the distinction is moot -- both resolve to default visibility -- which
+ * is exactly why getting it wrong would go unnoticed until a Windows build.
  * See logos_shared_api.h in logos-protocol.
  */
-class LOGOS_SHARED_API LogosAPI : public QObject
+class LOGOS_QT_HOST_API LogosAPI : public QObject
 {
     Q_OBJECT
 

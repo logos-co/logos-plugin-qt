@@ -27,11 +27,13 @@ if(EXISTS "${LOGOS_PROTOCOL_ROOT}/lib/cmake/logos-protocol")
     find_package(logos-protocol REQUIRED
         PATHS "${LOGOS_PROTOCOL_ROOT}/lib/cmake/logos-protocol" NO_DEFAULT_PATH)
     set(LP_TARGET logos-protocol::logos_protocol)
+    set(LP_SHARED_TARGET logos-protocol::logos_protocol_shared)
 elseif(EXISTS "${LOGOS_PROTOCOL_ROOT}/cpp/CMakeLists.txt")
     # Source checkout → build it as a subproject (dev convenience).
     add_subdirectory("${LOGOS_PROTOCOL_ROOT}/cpp"
                      "${CMAKE_BINARY_DIR}/logos-protocol-build")
     set(LP_TARGET logos_protocol)
+    set(LP_SHARED_TARGET logos_protocol_shared)
 else()
     message(FATAL_ERROR "logos-protocol not found. Set LOGOS_PROTOCOL_ROOT to an "
                         "installed logos-protocol prefix or a source checkout.")
@@ -71,6 +73,86 @@ set_target_properties(logos_qt_host PROPERTIES
 )
 
 install(TARGETS logos_qt_host
+    EXPORT logos-qt-hostTargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
+)
+
+# ---------------------------------------------------------------------------
+# logos_qt_host_shared — the Qt host runtime as a SHARED library.
+#
+# WHY. The types in here (LogosAPI) and in logos-protocol (TokenManager,
+# LogosAPIClient, the per-identity StoreRegistry) must exist EXACTLY ONCE per
+# process. Every image that links a static archive gets its own copy of every
+# function-local static inside it, so the host writes a capability token into
+# one store and another in-process image reads an empty one -- with no build
+# diagnostic. Linking ONE shared library is what replaces the whole-archive +
+# generated-.def scheme in which liblogos_core absorbed both archives and
+# re-exported them.
+#
+# THE STATIC ARCHIVE STAYS, and not transitionally. Module plugins and ui_qml
+# backends run in their OWN processes, so their own copy is the CORRECT
+# per-process singleton; staying static also keeps a .lgx self-contained (a .lgx
+# records an empty nix closure, so a shared library would not travel with it).
+# In-process images link the shared one; out-of-process images link the archive.
+if(NOT TARGET ${LP_SHARED_TARGET})
+    # Hard failure rather than "skip the shared target", because every failure
+    # mode here is silent: a consumer that wanted the shared runtime would fall
+    # back to the archive, link cleanly, and reintroduce the duplicate singleton
+    # at runtime.
+    message(FATAL_ERROR
+        "${LP_SHARED_TARGET} is not a target, so logos_qt_host_shared cannot be "
+        "built. It requires a logos-protocol that EXPORTS its shared library "
+        "(logos-protocol#65). Check that LOGOS_PROTOCOL_ROOT points at a "
+        "protocol build new enough to provide it.")
+endif()
+
+add_library(logos_qt_host_shared SHARED ${QT_HOST_SOURCES})
+
+# PUBLIC-links the SHARED protocol, NOT ${LP_TARGET}.
+#
+# This single line is the whole correctness of this target. Linking the static
+# archive here would embed a second copy of TokenManager INSIDE
+# liblogos_qt_host.{so,dylib,dll} -- the exact bug this migration removes, one
+# layer down, and invisible to a consumer-side symbol gate because the duplicate
+# would live in a library the gate treats as a provider.
+target_link_libraries(logos_qt_host_shared PUBLIC
+    ${LP_SHARED_TARGET}
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::RemoteObjects
+)
+
+# LogosAPI is EXPORTED from this library (LOGOS_QT_HOST_API), while TokenManager
+# and LogosAPIClient -- owned by logos-protocol -- must be IMPORTED from
+# liblogos_protocol. That is why they are two macros and not one: a single macro
+# cannot say "export" and "import" in the same translation unit.
+#
+# LOGOS_QT_HOST_BUILDING_SHARED is tested FIRST in logos_shared_api.h, so
+# LogosAPI still resolves to dllexport here even with LOGOS_SHARED_USE_DLL set.
+target_compile_definitions(logos_qt_host_shared PRIVATE LOGOS_QT_HOST_BUILDING_SHARED)
+if(WIN32)
+    target_compile_definitions(logos_qt_host_shared PRIVATE LOGOS_SHARED_USE_DLL)
+endif()
+
+target_include_directories(logos_qt_host_shared PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
+
+# Same basename as the archive; the LIBRARY install lands it in $out/lib beside
+# liblogos_qt_host.a.
+set_target_properties(logos_qt_host_shared PROPERTIES
+    OUTPUT_NAME logos_qt_host
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
+
+# ARCHIVE DESTINATION is load-bearing on Windows and inert elsewhere: a shared
+# library's IMPORT library (.dll.a) is the ARCHIVE artifact while the DLL is
+# RUNTIME, so omitting it installs no import library and a consumer gets an
+# imported target whose IMPORTED_IMPLIB does not exist. Invisible on ELF/Mach-O.
+install(TARGETS logos_qt_host_shared
     EXPORT logos-qt-hostTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
