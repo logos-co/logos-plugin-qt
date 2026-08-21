@@ -350,7 +350,10 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     // Same protocol-MINOR guard as the C-ABI export: glue generated for a
     // module built against logos-protocol < 0.3 must still compile, and there
     // is no grant entry point to call there.
-    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && LOGOS_PROTOCOL_VERSION_MINOR >= 3\n";
+    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && "
+         "(LOGOS_PROTOCOL_VERSION_MAJOR > 0 || "
+         "(LOGOS_PROTOCOL_VERSION_MAJOR == 0 && "
+         "LOGOS_PROTOCOL_VERSION_MINOR >= 3))\n";
     s << "    const QString hostServices = obj->property(\"hostServices\").toString();\n";
     s << "    if (!hostServices.isEmpty()) {\n";
     s << "        if (logos_module_grant_host_services(\n";
@@ -383,7 +386,10 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
     // depends on the protocol -- on anything older than 0.5 the two C ABI
     // symbols do not exist, and answering 0 (Synchronous) is exactly right: a
     // module whose ABI cannot carry teardown has nothing to wait for.
-    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && LOGOS_PROTOCOL_VERSION_MINOR >= 5\n";
+    s << "#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && "
+         "(LOGOS_PROTOCOL_VERSION_MAJOR > 0 || "
+         "(LOGOS_PROTOCOL_VERSION_MAJOR == 0 && "
+         "LOGOS_PROTOCOL_VERSION_MINOR >= 5))\n";
     // Installed BEFORE asking, because a module that finishes inline would
     // otherwise signal into an empty slot and the host would wait out the whole
     // grace period for a module already done.

@@ -189,6 +189,16 @@
           inherit pkgs;
           generator = self.packages.${system}.logos-qt-host-generator;
         };
+
+        # The two halves of the teardown hook -- the glue that EMITS
+        # aboutToUnload/unloadFinished and the host helper that REACHES them by
+        # name -- both live here, and nothing in either build ties them
+        # together. This does.
+        unload-contract = import ./tests/test-unload-contract.nix {
+          inherit pkgs;
+          generator = self.packages.${system}.logos-qt-host-generator;
+          src = ./.;
+        };
       });
 
       # Dev shell for working on the backend itself
