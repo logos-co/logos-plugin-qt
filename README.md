@@ -62,6 +62,30 @@ it, and carries no knowledge of where the templates live.)
 mentions the two C++ derivations, so a consumer that only wants the build
 functions never realises a Qt or protocol build to get them.
 
+## By-name contracts
+
+Two things cross the host/plugin boundary as a **string** rather than a symbol,
+because a plugin and the host that loads it are separate images: each links its
+own copy of `LogosAPI`, `ModuleProxy` and `TokenManager`, at distinct addresses
+and with no undefined reference to the other's (Mach-O is `TWOLEVEL`, PE has no
+interposition; only ELF's flat namespace collapses them). A direct C++ call
+binds to the *calling* image's copy. `QMetaObject::invokeMethod` does not — it
+resolves through `metaObject()` / `qt_metacall`, which are virtual, and the
+vptr was written by the **host's** constructor.
+
+| Contract | Emitted by | Reached by |
+|---|---|---|
+| `aboutToUnload()` / `unloadFinished()` | `qt-host-generator`, on the plugin class | `cpp/logos_plugin_unload.cpp` |
+| `currentCallerJson()` — who is calling this dispatch | `cpp/logos_api.h`, on `LogosAPI` | `cpp/logos_provider_object.cpp`, then pushed across the module-impl C ABI by the generated glue |
+
+Nothing in either build ties the two ends together: rename one side and every
+module still compiles, links and loads, and the feature is simply never found —
+a silent, permanent no-op that looks exactly like a module which legitimately
+declined. Both halves of both contracts live in **this** repo, which is what
+makes `tests/test-unload-contract.nix` and `tests/test-caller-contract.nix`
+possible: they scrape the name out of the emitter and require the consumer to
+reach for that exact string, in both directions.
+
 ## Layout
 
 ```

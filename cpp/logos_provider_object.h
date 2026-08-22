@@ -55,6 +55,33 @@ protected:
     virtual void onInit(LogosAPI* api) {}
     LogosAPI* logosAPI() const { return m_logosAPI; }
 
+    /**
+     * @brief THE PULL: who is calling the dispatch running on THIS thread,
+     *        fetched out of the HOST image.
+     *
+     * Returns the logos-protocol caller document (a JSON object with a
+     * mandatory "kind" — logos_module_impl.h has the normative shape), ready to
+     * hand straight to logos_module_set_call_caller(). NEVER EMPTY and never
+     * null: everything that cannot be answered resolves to
+     * logos::callerUnknownJson(), because on that C ABI a NULL document is the
+     * POP, so pushing one would leave the module reading whatever caller the
+     * previous dispatch on this thread left behind.
+     *
+     * EXISTS SO THE GENERATED GLUE HAS ONE CALL. The body is a
+     * QMetaObject::invokeMethod incantation whose every detail is load-bearing
+     * (by name, DirectConnection, Q_RETURN_ARG) and which would otherwise be
+     * copied into two emission sites — the single and the multi branch — where
+     * a wrong copy still compiles.
+     *
+     * MUST BE CALLED ON THE DISPATCH THREAD, before any hand-off to a worker.
+     * The document lives in a thread-local that ModuleProxy opened on the
+     * thread it delivered the call on; a concurrency:"multi" worker has no such
+     * scope and never will, so a pull made there answers Unknown on every
+     * platform. std::string rather than QString or QByteArray so the value is
+     * trivially safe to copy BY VALUE into that worker's lambda.
+     */
+    std::string currentCallerJson() const;
+
 private:
     EventCallback m_eventCallback;
     LogosAPI* m_logosAPI = nullptr;

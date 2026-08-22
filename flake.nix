@@ -199,6 +199,44 @@
           generator = self.packages.${system}.logos-qt-host-generator;
           src = ./.;
         };
+
+        # WHO IS CALLING, the same shape one layer over: LogosAPI declares the
+        # invokable, logos_provider_object.cpp reaches it BY STRING through the
+        # meta-object, and the glue this repo emits pushes the answer across the
+        # module-impl C ABI. Rename the invokable and nothing fails to compile,
+        # nothing fails to load, and every handler is told "unknown" -- which is
+        # also the correct answer in several real cases, so there is no anomaly
+        # to notice.
+        caller-contract = import ./tests/test-caller-contract.nix {
+          inherit pkgs;
+          generator = self.packages.${system}.logos-qt-host-generator;
+          src = ./.;
+        };
+
+        # The host half of the caller, RUN rather than grepped: a real LogosAPI,
+        # a real CallerScope, reached the way the glue reaches it. Also the only
+        # oracle in this repo for the rule the multi emission is built around --
+        # a scope open on one thread is invisible on another.
+        caller-invokable = import ./tests/test-caller-invokable.nix {
+          inherit pkgs;
+          qtHost = self.packages.${system}.logos-qt-host;
+        };
+
+        # Every other check greps the emitted glue as TEXT. This one COMPILES
+        # it, against the headers this repo installs, with the module-impl C ABI
+        # stubbed. The blind spot it closes is on the record: a multi capture
+        # list that omitted a local its body named was invisible to every grep
+        # here and surfaced as a build failure downstream.
+        glue-compiles = import ./tests/test-glue-compiles.nix {
+          inherit pkgs;
+          generator = self.packages.${system}.logos-qt-host-generator;
+          qtHost = self.packages.${system}.logos-qt-host;
+          # The protocol SOURCE, not the built library: logos_async_dispatch.h
+          # is not in logos-protocol's installed header set, and every
+          # concurrency:"multi" glue includes it. logos-module-builder resolves
+          # it the same way (LogosModule.cmake, ${LOGOS_PROTOCOL_ROOT}/cpp).
+          protocolSrc = logos-protocol;
+        };
       });
 
       # Dev shell for working on the backend itself

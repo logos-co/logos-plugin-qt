@@ -3,9 +3,24 @@
 #include "logos_api_provider.h"
 #include "logos_thread_marshal.h"
 #include "token_manager.h"
+// For LOGOS_PROTOCOL_VERSION_{MAJOR,MINOR}, which currentCallerJson()'s body is
+// guarded on. Included by name rather than relied on transitively: if the macro
+// were merely undefined here the guard would evaluate FALSE and this file would
+// still compile, handing every module a permanently empty caller with no
+// diagnostic anywhere.
+#include "logos_protocol.h"
 #include <QDebug>
 #include <QVariant>
 #include <string>
+
+// The host half of the caller: logos::currentInboundCallerJson() and
+// logos::callerUnknownJson(). Arrived in logos-protocol 0.6, so the include is
+// guarded exactly as the body below is — this file must keep compiling against
+// an older protocol, where the header does not exist.
+#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 || \
+    (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR >= 6))
+#include "logos_caller_scope.h"
+#endif
 
 LogosAPI::LogosAPI(const QString& module_name, QObject *parent)
     : LogosAPI(module_name, LogosTransportSet{}, parent)
@@ -68,6 +83,30 @@ LogosAPI::~LogosAPI()
     // Token manager is a singleton, so we don't delete it
 
 
+}
+
+// See logos_api.h for WHY this exists as an invokable rather than a plain
+// method or a property. The body is one line of substance; the mechanism is
+// entirely in how it is REACHED.
+//
+// The DECLARATION stays unguarded even though the body is guarded, matching
+// aboutToUnload in the generated glue: moc emits the meta-object entry either
+// way, and a by-name lookup should find the same surface on every host. On a
+// protocol below 0.6 the answer is an empty QString — not a hand-spelled
+// unknown document, because at that version the whole surface is absent
+// (nothing on the module side can receive one, since the glue's push is guarded
+// on the same expression) and inventing a second spelling of
+// logos::callerUnknownJson() here is exactly how the two would drift apart.
+QString LogosAPI::currentCallerJson() const
+{
+#if defined(LOGOS_PROTOCOL_VERSION_MINOR) && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 || \
+    (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR >= 6))
+    const std::string caller = logos::currentInboundCallerJson();
+    return QString::fromStdString(caller.empty() ? logos::callerUnknownJson()
+                                                 : caller);
+#else
+    return QString();
+#endif
 }
 
 LogosAPIProvider* LogosAPI::getProvider() const
