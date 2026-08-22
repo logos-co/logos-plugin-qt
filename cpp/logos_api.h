@@ -229,6 +229,49 @@ public:
     QString moduleName() const { return m_module_name; }
 
     /**
+     * @brief WHO is calling the dispatch currently running ON THIS THREAD, as
+     *        the logos-protocol caller document.
+     *
+     * Returns the JSON object logos-protocol 0.6 defines (normatively in
+     * logos_module_impl.h, above logos_module_set_call_caller): a mandatory
+     * "kind" of "unknown" | "host" | "module" | "derived" | "operator".
+     *
+     * Q_INVOKABLE, AND THAT IS THE ENTIRE POINT — this is not a convenience
+     * accessor. ModuleProxy::callRemoteMethod opens a logos::CallerScope in the
+     * HOST image, into a thread-local that lives in the host's copy of
+     * logos-protocol. The generated cdylib glue runs in the MODULE image, which
+     * links its OWN copy of both this class and that thread-local, at distinct
+     * addresses and with no undefined reference to the host's (Mach-O is
+     * TWOLEVEL, PE has no interposition at all; only ELF's flat namespace
+     * collapses the two). So the glue cannot call this directly: a direct call
+     * binds to the plugin's copy and reads a slot no CallerScope ever wrote —
+     * silently empty forever on macOS and Windows, and correct on Linux, which
+     * is exactly the asymmetry that let two prior ABI breaks through.
+     *
+     * QMetaObject::invokeMethod does land in the host image, because it
+     * resolves through metaObject()/qt_metacall, which are VIRTUAL and whose
+     * vptr was written by the HOST's constructor. It is the same cross-image
+     * safe channel initLogos, aboutToUnload and the authToken / hostServices /
+     * modulePath properties already use. LogosProviderBase::currentCallerJson()
+     * is the one place that performs that call; nothing else should.
+     *
+     * A RETURN VALUE, not a dynamic property, and that is not a style choice: a
+     * property is ONE process-global mutable slot, so two overlapping
+     * concurrency:"multi" dispatches from different callers would clobber each
+     * other's identity next to an authorization decision. The value here is
+     * per-thread and is read synchronously by the thread it belongs to.
+     *
+     * NEVER EMPTY. logos::currentInboundCallerJson() answers empty for "no
+     * dispatch is in flight on this thread", which is a third state distinct
+     * from {"kind":"unknown"} ("a dispatch whose caller could not be named").
+     * That distinction is meaningful inside the host and cannot cross the C ABI
+     * — on that ABI a null document is the POP — so it is collapsed exactly
+     * here, at the boundary, using logos-protocol's own producer rather than a
+     * second spelling of the same document.
+     */
+    Q_INVOKABLE QString currentCallerJson() const;
+
+    /**
      * @brief Get the client provider instance
      * @return LogosAPIProvider* Pointer to the provider
      */
