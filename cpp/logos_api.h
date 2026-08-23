@@ -191,10 +191,18 @@ public:
      * @brief A LogosAPI that speaks AS `identity`, from an ISOLATED store.
      *
      * Isolates `identity` (idempotent) and binds the returned object to that
-     * identity's private token store — seeded with the bootstrap keys and
-     * nothing else, so its first call to any target must go through
-     * `capability_module.requestModule` instead of finding the target's root
-     * token lying in the host's ambient ring.
+     * identity's private token store — which is created EMPTY, so its first
+     * call to any target must go through `capability_module.requestModule`
+     * instead of finding the target's root token lying in the host's ambient
+     * ring.
+     *
+     * THIS IS HALF AN IDENTITY, AND MOST CALLERS WANT logos::admitConsumer
+     * (logos_consumer.h) INSTEAD. An empty store cannot authenticate that first
+     * requestModule either: something has to install the identity's own
+     * host-issued credential under the bootstrap keys, and something has to
+     * register that credential with capability_module first. admitConsumer does
+     * all of it in the one order that leaves no window. What is left here is the
+     * store-selection primitive it is built on.
      *
      * Returns NULLPTR when the identity cannot be isolated, which happens only
      * if a client for that exact name was already handed the shared store. That
@@ -203,10 +211,12 @@ public:
      * private store is the "looks fixed, isn't" outcome this whole mechanism
      * exists to avoid. Fail the load instead.
      *
-     * Isolating the store is only half of an identity. The host must also make
-     * the name a KNOWN CALLER by registering an auth token for it with
-     * capability_module (`informModuleToken`), or the very first
-     * `requestModule` is refused by the known-caller gate.
+     * Isolating the store is only half of an identity. The host must also mint
+     * a credential, make the name a KNOWN CALLER by registering that credential
+     * with capability_module (`informModuleToken`), and install it in the
+     * identity's store — or the very first `requestModule` presents nothing and
+     * is refused. logos::admitConsumer is that operation; this function on its
+     * own yields an identity that can call nothing.
      */
     static LogosAPI* forIdentity(const QString& identity, QObject* parent = nullptr);
     
