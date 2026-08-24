@@ -62,9 +62,32 @@ class QObject;
 // So the ordering constraint is spelled as a compile error rather than left to
 // a reviewer. If this fires, the fix is to update logos-plugin-qt and the
 // hosts in the same wave as the protocol bump, then raise the bound.
+//
+// RAISED 7 -> 8 for logos-protocol 0.8 (the INBOUND/OUTBOUND direction split),
+// which is the wave THIS repo moves in: the glue emitted here now routes
+// informModuleToken through logos_module_accept_inbound_token. The review the
+// error above asks for, carried out against protocol 42460e5b:
+//
+//   * bootstrapKeys(), adoptCredential() and adoptCredentialFor() are
+//     signature- and semantics-identical to 0.7. 0.8 changed the KEY NAMESPACE
+//     (inbound is a reserved-prefix key, outbound stays the bare peer name),
+//     not how a store is seeded, and TokenManager's layout is byte-identical.
+//   * credential() became DERIVED from bootstrapKeys() rather than cached.
+//     That STRENGTHENS this path: a cached field read empty on a store another
+//     image wrote and then refused every push.
+//   * 0.8's own adoptCredential() contract spells out both halves of what
+//     admitConsumer needs -- OUTBOUND, the identity presents its credential and
+//     capability_module's proxy resolves it from the caller-keyed inbound
+//     record rather than an anchor key, so the caller is named as the identity
+//     and not as the host; INBOUND, capability_module pushes with
+//     getToken(moduleName), which IS that credential, so informModuleToken's
+//     trusted-channel gate still passes.
+//
+// The consumer-admission check is the oracle, not this comment: it runs a real
+// ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 7))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 8))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::admitConsumer must move in the SAME wave. Review \
