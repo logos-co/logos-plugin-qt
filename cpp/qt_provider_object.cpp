@@ -493,8 +493,10 @@ bool QtProviderObject::informModuleToken(const QString& moduleName, const QStrin
         return false;
     }
 
-    qDebug() << "[LogosProviderObject] QtProviderObject: saving token for module:" << moduleName;
-    tokenManager->saveToken(moduleName, token);
+    // The INBOUND door, for the same reason as LogosProviderBase::
+    // informModuleToken above: `moduleName` is the CALLER, not a callee.
+    qDebug() << "[LogosProviderObject] QtProviderObject: saving inbound token for caller:" << moduleName;
+    tokenManager->saveInboundToken(moduleName, token);
     return true;
 }
 

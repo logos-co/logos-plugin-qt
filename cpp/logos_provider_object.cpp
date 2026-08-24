@@ -49,8 +49,17 @@ bool LogosProviderBase::informModuleToken(const QString& moduleName, const QStri
         return false;
     }
 
-    qDebug() << "[LogosProviderObject] Saving token for module:" << moduleName;
-    tokenManager->saveToken(moduleName, token);
+    // THE INBOUND DOOR, and the direction is the whole of the choice.
+    //
+    // `moduleName` here is the module that will CALL US; `token` is what it
+    // will present. saveToken() is the OUTBOUND half — "what I present when I
+    // call moduleName" — and writing here landed both directions in one map
+    // under one key, which is what let a grant <m -> b> silently also authorize
+    // <b -> m> and let this push clobber our own per-target cache for the same
+    // peer. See the DIRECTION note in logos-protocol cpp/token_manager.h and
+    // the detector at tests/protocol/test_token_direction.cpp.
+    qDebug() << "[LogosProviderObject] Saving inbound token for caller:" << moduleName;
+    tokenManager->saveInboundToken(moduleName, token);
     return true;
 }
 
