@@ -328,8 +328,36 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
         s << "            logos_module_string_free(result);\n";
         s << "            if (!jResult.is_discarded()) {\n";
         if (!voidMethods.isEmpty()) {
+            // A void method's reply is not "nothing to read" -- it is the only
+            // place the provider can REFUSE the call, and this branch used to
+            // discard it. `value = QVariant(true)` was unconditional: the
+            // dispatch JSON was parsed, then thrown away, so a provider that
+            // answered {"code":"invalid_args", ...} was reported to the caller
+            // as a successful void call.
+            //
+            // Measured on failure/B/arity/too-many-zero-parameter: with the
+            // arity upper bound in place (logos-cpp-sdk #150, logos-rust-sdk
+            // #50) the provider DOES refuse `doVoid("junk")` -- the built
+            // module carries the `expected 0 arguments, got ` literal -- and
+            // the cell still reported `true` on both providers and all three
+            // consumers, because the refusal died here rather than at the
+            // provider. The same six cells stayed red while the twelve cells
+            // of the non-void arity cases went green.
+            //
+            // The closed set is the one logos-qt-sdk's consumer detector uses
+            // (dispatch_failed / invalid_args / unknown_method), matched only
+            // on an OBJECT carrying a string `code`, so a void method whose
+            // provider legitimately answers an object is unaffected -- and
+            // there is no such method, since the contract says it returns
+            // nothing.
             s << "                if (isVoidMethod) {\n";
-            s << "                    value = QVariant(true);\n";
+            s << "                    const bool __rejected = jResult.is_object()\n";
+            s << "                        && jResult.contains(\"code\") && jResult[\"code\"].is_string()\n";
+            s << "                        && (jResult[\"code\"] == \"dispatch_failed\"\n";
+            s << "                            || jResult[\"code\"] == \"invalid_args\"\n";
+            s << "                            || jResult[\"code\"] == \"unknown_method\");\n";
+            s << "                    value = __rejected ? logos::nlohmannToQVariant(jResult)\n";
+            s << "                                       : QVariant(true);\n";
             s << "                } else\n";
         }
         if (!resultMethods.isEmpty()) {
