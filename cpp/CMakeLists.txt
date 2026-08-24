@@ -59,6 +59,13 @@ set(QT_HOST_SOURCES
     # stay under one test -- see tests/test-unload-contract.nix.
     logos_plugin_unload.cpp
     logos_plugin_unload.h
+    # Admitting a NON-MODULE consumer (a QML view, an in-process widget plugin,
+    # a co-process view host) to a running system: isolate, mint, register with
+    # capability_module, adopt. Host-only, and here rather than in liblogos
+    # because both hand-rolled sites -- and ui-host, which does not link
+    # liblogos at all -- reach the system through THIS library's LogosAPI.
+    logos_consumer.cpp
+    logos_consumer.h
 )
 
 add_library(logos_qt_host STATIC ${QT_HOST_SOURCES})
@@ -196,6 +203,7 @@ set(QT_HOST_PUBLIC_HEADERS
     qt_provider_object.h
     logos_qt_arg_decode.h
     logos_plugin_unload.h
+    logos_consumer.h
 )
 
 # Headers keep their historical names so existing `#include "logos_api.h"`
