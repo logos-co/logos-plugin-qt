@@ -222,6 +222,16 @@
           qtHost = self.packages.${system}.logos-qt-host;
         };
 
+        # logos::admitConsumer -- the one home for "make this non-module caller a
+        # known, credentialed identity". Runs a real ModuleProxy for
+        # capability_module so the registration goes through the trusted-channel
+        # gate and the consumer's call goes through the authorization scan, and
+        # asserts REGISTER-BEFORE-ADOPT from inside the push itself.
+        consumer-admission = import ./tests/test-consumer-admission.nix {
+          inherit pkgs;
+          qtHost = self.packages.${system}.logos-qt-host;
+        };
+
         # Every other check greps the emitted glue as TEXT. This one COMPILES
         # it, against the headers this repo installs, with the module-impl C ABI
         # stubbed. The blind spot it closes is on the record: a multi capture
