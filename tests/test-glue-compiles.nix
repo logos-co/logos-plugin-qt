@@ -95,6 +95,14 @@ pkgs.stdenv.mkDerivation {
     void logos_module_set_context(const char*, const char*, const char*) {}
     void logos_module_set_emit_callback(logos_module_emit_cb, void*) {}
     int logos_module_accept_token(const char*, const char*) { return 0; }
+    // The INBOUND door (protocol 0.8), stubbed under the SAME guard the glue
+    // emits its call behind. Unguarded it would be a compile error against an
+    // older logos-protocol, whose logos_module_impl.h does not declare it --
+    // which is the one thing this probe exists to catch rather than cause.
+    #if defined(LOGOS_PROTOCOL_VERSION_MINOR) && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 || \
+        (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR >= 8))
+    int logos_module_accept_inbound_token(const char*, const char*) { return 0; }
+    #endif
     int logos_module_grant_host_services(const char*) { return 0; }
     void logos_module_set_unload_done_callback(logos_module_unload_done_cb, void*) {}
     int logos_module_about_to_unload(void) { return 0; }
