@@ -150,6 +150,24 @@ pkgs.runCommand "logos-qt-host-generator-test" {
       || { echo "multi worker lambda reads $flag but does not capture it: $worker_capture"; exit 1; }
   done
 
+  # A void method's REFUSAL must survive. This branch used to be an
+  # unconditional `value = QVariant(true)`: the dispatch JSON was parsed and
+  # then discarded, so a provider answering {"code":"invalid_args", ...} was
+  # reported to the caller as a successful void call. With the arity upper
+  # bound in the generated dispatches (logos-cpp-sdk #150, logos-rust-sdk #50)
+  # the provider genuinely refuses `doVoid("junk")` -- and the conformance cell
+  # still went green-on-`true` until this branch stopped throwing it away.
+  grep -q '__rejected' $cm \
+    || { echo "the void arm does not test the reply for a rejection"; exit 1; }
+  for code in dispatch_failed invalid_args unknown_method; do
+    grep -q "\"$code\"" $cm \
+      || { echo "the void arm's rejection set omits $code"; exit 1; }
+  done
+  # It must still answer `true` for an ordinary void reply -- the fix is a
+  # branch, not a replacement.
+  grep -q 'QVariant(true)' $cm \
+    || { echo "the void arm no longer answers true for a normal reply"; exit 1; }
+
   # void WITHOUT result — the fourth combination, and the one neither
   # hand-written capture list could express: it captured neither flag while the
   # body still named isVoidMethod, so `concurrency: "multi"` on any module with
