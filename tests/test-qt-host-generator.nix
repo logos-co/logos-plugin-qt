@@ -257,11 +257,25 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   # bound in the generated dispatches (logos-cpp-sdk #150, logos-rust-sdk #50)
   # the provider genuinely refuses `doVoid("junk")` -- and the conformance cell
   # still went green-on-`true` until this branch stopped throwing it away.
+  # BOTH void sites, and each in ITS OWN FILE -- not merely 'present
+  # somewhere'. There are two, on different concurrency paths: the SINGLE path
+  # ($c) returns early via `kVoidMethods.contains(methodName)`, and the MULTI
+  # path ($cm) decides inside the worker via `isVoidMethod`. The first fix
+  # patched only the multi one, and the assertion here only checked for
+  # presence -- so it passed while the conformance cells stayed red. Checking
+  # the right property in the wrong file is the same mistake one step over,
+  # which is why each site is now asserted against the file it lives in.
+  grep -q 'kVoidMethods.contains(methodName)) {' $c \
+    || { echo "single-path void return short-circuits before testing the reply"; exit 1; }
+  grep -q '__rejected' $c \
+    || { echo "single-path void return does not test the reply for a rejection"; exit 1; }
   grep -q '__rejected' $cm \
-    || { echo "the void arm does not test the reply for a rejection"; exit 1; }
+    || { echo "multi-path void arm does not test the reply for a rejection"; exit 1; }
   for code in dispatch_failed invalid_args unknown_method; do
+    grep -q "\"$code\"" $c \
+      || { echo "the single-path void rejection set omits $code"; exit 1; }
     grep -q "\"$code\"" $cm \
-      || { echo "the void arm's rejection set omits $code"; exit 1; }
+      || { echo "the multi-path void rejection set omits $code"; exit 1; }
   done
   # It must still answer `true` for an ordinary void reply -- the fix is a
   # branch, not a replacement.

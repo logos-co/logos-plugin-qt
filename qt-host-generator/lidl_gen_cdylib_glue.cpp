@@ -205,16 +205,28 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi)
         s << "    logos_module_string_free(result);\n";
         s << "    if (jResult.is_discarded()) return QVariant();\n";
         if (!voidMethods.isEmpty()) {
-            s << "    // `void` methods answer QVariant(true) whatever the cdylib put on the\n";
-            s << "    // C ABI. An invalid QVariant is this slot's failure token, so a void\n";
-            s << "    // method needs SOME value to mean \"it ran\".\n";
+            s << "    // `void` methods answer QVariant(true) for ANY ordinary reply: an\n";
+            s << "    // invalid QVariant is this slot's failure token, so a void method needs\n";
+            s << "    // SOME value to mean \"it ran\".\n";
+            s << "    //\n";
+            s << "    // But NOT for a refusal. This used to read `whatever the cdylib put on\n";
+            s << "    // the C ABI`, and that is the one case where the cdylib has something\n";
+            s << "    // to say: a provider that rejected the call answered\n";
+            s << "    // {\"code\":\"invalid_args\", ...} and the caller was told it ran.\n";
             s << "    static const QSet<QString> kVoidMethods = {";
             for (int i = 0; i < voidMethods.size(); ++i) {
                 s << "QStringLiteral(\"" << voidMethods[i] << "\")";
                 if (i + 1 < voidMethods.size()) s << ", ";
             }
             s << "};\n";
-            s << "    if (kVoidMethods.contains(methodName)) return QVariant(true);\n";
+            s << "    if (kVoidMethods.contains(methodName)) {\n";
+            s << "        const bool __rejected = jResult.is_object()\n";
+            s << "            && jResult.contains(\"code\") && jResult[\"code\"].is_string()\n";
+            s << "            && (jResult[\"code\"] == \"dispatch_failed\"\n";
+            s << "                || jResult[\"code\"] == \"invalid_args\"\n";
+            s << "                || jResult[\"code\"] == \"unknown_method\");\n";
+            s << "        return __rejected ? logos::nlohmannToQVariant(jResult) : QVariant(true);\n";
+            s << "    }\n";
         }
         if (!resultMethods.isEmpty()) {
             s << "    // StdLogosResult-returning methods: re-materialize the Qt LogosResult\n";
