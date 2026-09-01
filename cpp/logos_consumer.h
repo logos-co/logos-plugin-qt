@@ -63,6 +63,24 @@ class QObject;
 // a reviewer. If this fires, the fix is to update logos-plugin-qt and the
 // hosts in the same wave as the protocol bump, then raise the bound.
 //
+// RAISED 8 -> 9 for logos-protocol 0.9 (subscription continuity: a liveness
+// watchdog, a per-subscription generation counter, lp_subscribe_ex and
+// lp_subscription_generation). Unlike the 0.8 wave below, this repo has nothing
+// to move: 0.9 does not touch consumer admission at all. The review the error
+// above asks for, carried out against the 0.8 -> 0.9 range (42460e5b..48afc01c):
+//
+//   * bootstrapKeys(), adoptCredential(), adoptCredentialFor(), credential()
+//     and admitConsumer() have ZERO changed lines across the range.
+//   * No token, capability, credential or caller-scope file is touched;
+//     token_manager.{h,cpp} is byte-identical, so TokenManager's layout — which
+//     the host allocates and module images mutate — is unchanged.
+//   * The whole surface added is the EVENT path (logos_api_consumer's pending
+//     registry, logos_protocol's lp_subscribe_ex) plus a mock-fixture fix. A
+//     consumer is seeded exactly as it was at 0.8.
+//
+// So this raise records "nothing to do", not "reviewed and migrated". If a
+// later protocol changes how a store is seeded, this bound must fire again.
+//
 // RAISED 7 -> 8 for logos-protocol 0.8 (the INBOUND/OUTBOUND direction split),
 // which is the wave THIS repo moves in: the glue emitted here now routes
 // informModuleToken through logos_module_accept_inbound_token. The review the
@@ -87,7 +105,7 @@ class QObject;
 // ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 8))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 9))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::admitConsumer must move in the SAME wave. Review \
