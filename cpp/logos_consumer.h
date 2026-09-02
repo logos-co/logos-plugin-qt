@@ -64,10 +64,10 @@ class QObject;
 // hosts in the same wave as the protocol bump, then raise the bound.
 //
 // RAISED 8 -> 9 for logos-protocol 0.9 (subscription continuity: a liveness
-// watchdog, a per-subscription generation counter, lp_subscribe_ex and
-// lp_subscription_generation). Unlike the 0.8 wave below, this repo has nothing
-// to move: 0.9 does not touch consumer admission at all. The review the error
-// above asks for, carried out against the 0.8 -> 0.9 range (42460e5b..48afc01c):
+// watchdog plus a per-TARGET status callback, generation counter and restart
+// policy). Unlike the 0.8 wave below, this repo has nothing to move: 0.9 does
+// not touch consumer admission at all. The review the error above asks for,
+// carried out against the 0.8 -> 0.9 range (42460e5b..the 0.9 head):
 //
 //   * bootstrapKeys(), adoptCredential(), adoptCredentialFor(), credential()
 //     and admitConsumer() have ZERO changed lines across the range.
@@ -75,11 +75,17 @@ class QObject;
 //     token_manager.{h,cpp} is byte-identical, so TokenManager's layout — which
 //     the host allocates and module images mutate — is unchanged.
 //   * The whole surface added is the EVENT path (logos_api_consumer's pending
-//     registry, logos_protocol's lp_subscribe_ex) plus a mock-fixture fix. A
-//     consumer is seeded exactly as it was at 0.8.
+//     registry and its per-target record, logos_protocol's
+//     lp_client_set_subscription_status_cb and friends) plus a mock-fixture
+//     fix. A consumer is seeded exactly as it was at 0.8.
 //
 // So this raise records "nothing to do", not "reviewed and migrated". If a
 // later protocol changes how a store is seeded, this bound must fire again.
+//
+// THE BOUND IS `>` AND NOT `>=` ON PURPOSE, so every MINOR stops here and
+// someone has to look. The cost is a note like this one each time; the
+// alternative is a protocol that changes consumer seeding sailing through
+// because the last one happened not to.
 //
 // RAISED 7 -> 8 for logos-protocol 0.8 (the INBOUND/OUTBOUND direction split),
 // which is the wave THIS repo moves in: the glue emitted here now routes
