@@ -107,11 +107,23 @@ class QObject;
 //     getToken(moduleName), which IS that credential, so informModuleToken's
 //     trusted-channel gate still passes.
 //
+// RAISED 9 -> 10 for logos-protocol 0.10 (lp_target_presence, the local
+// presence query behind `metadata.json#optional_dependencies`). The review:
+//
+//   * 0.10 is PURELY ADDITIVE and adds exactly one function. bootstrapKeys(),
+//     adoptCredential() and adoptCredentialFor() are untouched — signature,
+//     semantics and key namespace all identical to 0.9 — and TokenManager's
+//     layout does not move.
+//   * lp_target_presence reads transport reachability and nothing else. It
+//     mints no token, seeds no store, and is reachable only through a client
+//     that was already admitted, so it cannot change how a consumer is seeded
+//     or who it authorizes as.
+//
 // The consumer-admission check is the oracle, not this comment: it runs a real
 // ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 9))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 10))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::admitConsumer must move in the SAME wave. Review \
