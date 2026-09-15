@@ -19,7 +19,8 @@
 //
 // Usage:
 //   logos-qt-host-generator --lidl <contract.lidl>
-//                           [--concurrency multi] [--output-dir <dir>]
+//                           [--concurrency multi] [--max-workers <n>]
+//                           [--output-dir <dir>]
 
 #include <QCoreApplication>
 #include <QDir>
@@ -70,11 +71,27 @@ int main(int argc, char* argv[])
     // returns a pending sentinel, and the result comes back as a completion
     // event. Anything other than the exact word "multi" means single.
     const bool multi = argValue(args, "--concurrency") == QStringLiteral("multi");
+    const bool hasMaxWorkers = args.contains(QStringLiteral("--max-workers"));
+    const QString maxWorkersArg = argValue(args, QStringLiteral("--max-workers"));
+    int maxWorkers = 0;
+    if (hasMaxWorkers) {
+        bool ok = false;
+        maxWorkers = maxWorkersArg.toInt(&ok);
+        if (!ok || maxWorkers <= 0) {
+            err << "Error: --max-workers must be a positive integer.\n";
+            return 2;
+        }
+        if (!multi) {
+            err << "Error: --max-workers requires --concurrency multi.\n";
+            return 2;
+        }
+    }
     QString outputDir = argValue(args, "--output-dir");
 
     if (lidlPath.isEmpty()) {
         err << "Usage: logos-qt-host-generator --lidl <contract.lidl>\n"
-               "         [--concurrency multi] [--output-dir <dir>]\n";
+               "         [--concurrency multi] [--max-workers <n>]\n"
+               "         [--output-dir <dir>]\n";
         return 1;
     }
 
@@ -117,9 +134,10 @@ int main(int argc, char* argv[])
     const QString lidlDocument = lidlSerialize(mod);
 
     QList<Out> outs;
-    outs.append({qs(mod.name) + "_cdylib_glue.h", lidlMakeCdylibGlueHeader(mod, multi)});
+    outs.append({qs(mod.name) + "_cdylib_glue.h",
+                 lidlMakeCdylibGlueHeader(mod, multi, maxWorkers)});
     outs.append({qs(mod.name) + "_cdylib_glue.cpp",
-                 lidlMakeCdylibGlueSource(mod, lidlDocument, multi)});
+                 lidlMakeCdylibGlueSource(mod, lidlDocument, multi, maxWorkers)});
 
     const int rc = writeAll(outs, outputDir, out, err);
     out.flush();

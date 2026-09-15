@@ -69,7 +69,8 @@ pkgs.stdenv.mkDerivation {
     EOF
 
     logos-qt-host-generator --lidl sample.lidl --output-dir single
-    logos-qt-host-generator --lidl sample.lidl --concurrency multi --output-dir multi
+    logos-qt-host-generator --lidl sample.lidl --concurrency multi \
+      --max-workers 2 --output-dir multi
 
     # Q_PLUGIN_METADATA(IID ... FILE "metadata.json") -- moc resolves the file
     # relative to the header it is reading, so one copy per output dir.
@@ -86,12 +87,35 @@ pkgs.stdenv.mkDerivation {
     cat > abi_stub.cpp <<'EOF'
     #include "logos_module_impl.h"
     #include "logos_protocol.h"   // LOGOS_PROTOCOL_VERSION_STRING
+    #include <atomic>
+    #include <chrono>
     #include <cstdlib>
     #include <cstring>
+    #include <thread>
+
+    namespace {
+    std::atomic<int> g_active{0};
+    std::atomic<int> g_peak{0};
+    }
 
     extern "C" {
-    char* logos_module_dispatch(const char*, const char*) { return nullptr; }
-    char* logos_module_get_methods(void) { return nullptr; }
+    char* logos_module_dispatch(const char*, const char*) {
+      const int active = g_active.fetch_add(1) + 1;
+      int peak = g_peak.load();
+      while (active > peak && !g_peak.compare_exchange_weak(peak, active)) {}
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      g_active.fetch_sub(1);
+      const char reply[] = "\"ok\"";
+      auto* out = static_cast<char*>(std::malloc(sizeof(reply)));
+      std::memcpy(out, reply, sizeof(reply));
+      return out;
+    }
+    char* logos_module_get_methods(void) {
+      const char reply[] = "[]";
+      auto* out = static_cast<char*>(std::malloc(sizeof(reply)));
+      std::memcpy(out, reply, sizeof(reply));
+      return out;
+    }
     void logos_module_set_context(const char*, const char*, const char*) {}
     void logos_module_set_emit_callback(logos_module_emit_cb, void*) {}
     int logos_module_accept_token(const char*, const char*) { return 0; }
@@ -109,6 +133,50 @@ pkgs.stdenv.mkDerivation {
     void logos_module_set_call_caller(const char*) {}
     const char* logos_module_get_protocol_version(void) { return LOGOS_PROTOCOL_VERSION_STRING; }
     void logos_module_string_free(char* s) { std::free(s); }
+    int bounded_dispatch_probe_peak(void) { return g_peak.load(); }
+    }
+    EOF
+
+    cat > bounded_dispatch_probe.cpp <<'EOF'
+    #include "glue_probe_cdylib_glue.h"
+    #include "logos_async_dispatch.h"
+
+    #include <QCoreApplication>
+    #include <QVariantMap>
+
+    #include <chrono>
+    #include <condition_variable>
+    #include <mutex>
+
+    extern "C" int bounded_dispatch_probe_peak(void);
+
+    int main(int argc, char** argv) {
+      QCoreApplication app(argc, argv);
+      GlueProbeCdylibProvider provider;
+      std::mutex mu;
+      std::condition_variable cv;
+      int completed = 0;
+      provider.setEventListener([&](const QString& event, const QVariantList&) {
+        if (event != logos::callCompleteEvent()) return;
+        std::lock_guard<std::mutex> lk(mu);
+        ++completed;
+        cv.notify_all();
+      });
+
+      constexpr int kCalls = 6;
+      for (int i = 0; i < kCalls; ++i) {
+        const QVariant reply = provider.callMethod(QStringLiteral("ping"), {});
+        if (!reply.toMap().contains(logos::pendingCallKey())) return 10;
+      }
+
+      std::unique_lock<std::mutex> lk(mu);
+      if (!cv.wait_for(lk, std::chrono::seconds(5), [&] { return completed == kCalls; }))
+        return 11;
+      lk.unlock();
+
+      // --max-workers 2 means a burst queues, reaches exactly two concurrent
+      // handlers, and still delivers every completion.
+      return bounded_dispatch_probe_peak() == 2 ? 0 : 12;
     }
     EOF
 
@@ -152,12 +220,26 @@ pkgs.stdenv.mkDerivation {
         target_link_options(''${variant}_glue PRIVATE -Wl,--no-undefined)
       endif()
     endforeach()
+
+    add_executable(bounded_dispatch_probe
+      bounded_dispatch_probe.cpp
+      multi/glue_probe_cdylib_glue.cpp
+      multi/glue_probe_cdylib_glue.h
+      abi_stub.cpp)
+    target_include_directories(bounded_dispatch_probe PRIVATE
+      ''${CMAKE_CURRENT_SOURCE_DIR}/multi
+      ''${LOGOS_QT_HOST_PREFIX}/include/core
+      ''${LOGOS_PROTOCOL_SRC}/cpp)
+    target_link_libraries(bounded_dispatch_probe PRIVATE
+      logos-qt-host::logos_qt_host
+      Qt6::Core Qt6::RemoteObjects)
     EOF
 
     cmake -S . -B build -GNinja \
       -DLOGOS_QT_HOST_PREFIX=${qtHost} \
       -DLOGOS_PROTOCOL_SRC=${protocolSrc}
     cmake --build build
+    ./build/bounded_dispatch_probe
 
     runHook postBuild
   '';

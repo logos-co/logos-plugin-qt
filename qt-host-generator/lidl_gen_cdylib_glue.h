@@ -10,13 +10,18 @@
 #include "lidl_compat.h"
 
 // `multi` ⇒ the module was built with concurrency:"multi": emit the DEFERRED
-// shape of the ordinary callMethod — it hands logos_module_dispatch to a
-// QThread worker and returns a pending sentinel at once, and the worker pushes
-// the answer back as a completion event keyed by callId. There is no separate
-// async override and no separate async C entry point: same callMethod slot,
-// same `logos_module_dispatch` symbol, so the provider ABI is unchanged.
+// shape of the ordinary callMethod — it queues logos_module_dispatch on a
+// bounded QThreadPool and returns a pending sentinel at once, and the worker
+// pushes the answer back as a completion event keyed by callId. `maxWorkers`
+// is zero when the runtime should size the pool to available parallelism.
+// There is no separate async override and no separate async C entry point:
+// same callMethod slot, same `logos_module_dispatch` symbol, so the provider
+// ABI is unchanged.
 // Default false = single (callMethod blocks on the C ABI and returns the answer).
-QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi = false);
+QString lidlMakeCdylibGlueHeader(const ModuleDecl& module,
+                                 bool multi = false,
+                                 int maxWorkers = 0);
 QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
                                  const QString& lidlDocument,
-                                 bool multi = false);
+                                 bool multi = false,
+                                 int maxWorkers = 0);

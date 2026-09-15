@@ -251,7 +251,8 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   # ---- concurrency: multi ----------------------------------------------
   # A different code path entirely: callMethod hands the call to a worker and
   # returns a pending sentinel, and the result arrives as a completion event.
-  logos-qt-host-generator --lidl sample.lidl --concurrency multi --output-dir out-multi
+  logos-qt-host-generator --lidl sample.lidl --concurrency multi \
+    --max-workers 2 --output-dir out-multi
 
   hm=out-multi/sample_probe_cdylib_glue.h
   cm=out-multi/sample_probe_cdylib_glue.cpp
@@ -260,11 +261,20 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     || { echo "multi header missing the async-dispatch include"; exit 1; }
   grep -q "m_callCounter" $hm \
     || { echo "multi header missing the deferred-call id counter"; exit 1; }
-  # A real QThread, not a raw std::thread: a handler making an outbound
-  # module->module call spins nested QEventLoops, which only a QThread's event
-  # dispatcher can drive.
-  grep -q "QThread::create" $cm \
-    || { echo "multi source does not run the handler on a QThread"; exit 1; }
+  # A bounded pool of real QThreads, not one new thread per request and not raw
+  # std::threads: outbound module calls need a Qt event dispatcher, while the
+  # configured cap prevents a request burst from exhausting OS thread pipes.
+  grep -q "QThreadPool m_workerPool" $hm \
+    || { echo "multi header is missing its reusable worker pool"; exit 1; }
+  grep -q "const int configured = 2;" $cm \
+    || { echo "multi source did not carry --max-workers into the pool"; exit 1; }
+  grep -q "entered.acquire(workers)" $cm \
+    || { echo "explicitly capped workers are not created before module traffic"; exit 1; }
+  grep -q "m_workerPool.start" $cm \
+    || { echo "multi source does not queue the handler on the pool"; exit 1; }
+  if grep -q "QThread::create" $cm; then
+    echo "multi source still creates one QThread per call"; exit 1
+  fi
   grep -q "pending\[logos::pendingCallKey()\] = callId;" $cm \
     || { echo "multi source does not return the pending sentinel"; exit 1; }
   grep -q "eventCb(logos::callCompleteEvent(), QVariantList{ callId, value });" $cm \
@@ -276,7 +286,7 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   # capture list that omitted one read the body still made was invisible here
   # and surfaced as a module build failure instead. The contract above has both
   # a void method and a result method, so both flags must be captured.
-  worker_capture=$(grep -o 'QThread::create(\[[^]]*\]' $cm)
+  worker_capture=$(grep -o 'm_workerPool.start(\[method[^]]*\]' $cm)
   for flag in isVoidMethod isResultMethod; do
     printf '%s' "$worker_capture" | grep -q "$flag" \
       || { echo "multi worker lambda reads $flag but does not capture it: $worker_capture"; exit 1; }
@@ -326,9 +336,10 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     method echoInt(v: int) -> int
   }
   EOF
-  logos-qt-host-generator --lidl voidonly.lidl --concurrency multi --output-dir out-voidonly
+  logos-qt-host-generator --lidl voidonly.lidl --concurrency multi \
+    --max-workers 2 --output-dir out-voidonly
   cv=out-voidonly/void_only_probe_cdylib_glue.cpp
-  vo_capture=$(grep -o 'QThread::create(\[[^]]*\]' $cv)
+  vo_capture=$(grep -o 'm_workerPool.start(\[method[^]]*\]' $cv)
   printf '%s' "$vo_capture" | grep -q "isVoidMethod" \
     || { echo "void-only multi lambda does not capture isVoidMethod: $vo_capture"; exit 1; }
   # `if`, not `&& { ...; }` — the negative assertion's SUCCESS path is a failing
@@ -336,6 +347,22 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   if printf '%s' "$vo_capture" | grep -q "isResultMethod"; then
     echo "void-only multi lambda captures isResultMethod, which it never declares"; exit 1
   fi
+
+  # Omission is still bounded: the runtime sizes the pool to available CPU
+  # parallelism. The direct CLI refuses nonsensical or ineffective caps rather
+  # than silently emitting a different scheduling contract.
+  logos-qt-host-generator --lidl sample.lidl --concurrency multi --output-dir out-auto
+  grep -q "QThread::idealThreadCount()" out-auto/sample_probe_cdylib_glue.cpp \
+    || { echo "multi without max-workers is not runtime-sized"; exit 1; }
+  if logos-qt-host-generator --lidl sample.lidl --max-workers 2 --output-dir out-bad; then
+    echo "max-workers was accepted without concurrency:multi"; exit 1
+  fi
+  for bad in 0 -1 nope; do
+    if logos-qt-host-generator --lidl sample.lidl --concurrency multi \
+         --max-workers "$bad" --output-dir out-bad; then
+      echo "invalid max-workers '$bad' was accepted"; exit 1
+    fi
+  done
 
   # ---- refusals ---------------------------------------------------------
   # No contract at all, and an unparseable one, must both FAIL rather than
