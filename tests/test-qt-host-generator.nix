@@ -28,6 +28,24 @@ pkgs.runCommand "logos-qt-host-generator-test" {
   # ---- single (default) concurrency ------------------------------------
   logos-qt-host-generator --lidl sample.lidl --output-dir out
 
+  # The host generator is callable directly, not only through
+  # logos-module-builder's normalization step. It must enforce the same
+  # generator-owned lidl() reservation at this boundary too.
+  cat > authored-lidl-method.lidl <<'EOF'
+  module sample_probe {
+    method lidl() -> tstr
+  }
+  EOF
+  set +e
+  logos-qt-host-generator --lidl authored-lidl-method.lidl --output-dir refused \
+    >reserved.out 2>reserved.err
+  reserved_status=$?
+  set -e
+  test "$reserved_status" -ne 0 \
+    || { echo "an authored lidl() method was accepted"; exit 1; }
+  grep -q 'generator-owned' reserved.err \
+    || { cat reserved.err; echo "authored lidl() failed without the ownership diagnostic"; exit 1; }
+
   for f in sample_probe_cdylib_glue.h sample_probe_cdylib_glue.cpp; do
     test -f "out/$f" || { echo "MISSING: $f"; exit 1; }
   done
@@ -50,6 +68,20 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     || { echo "module name not carried into providerName()"; exit 1; }
   grep -q 'providerVersion() const override { return QStringLiteral("2.1.0"); }' $h \
     || { echo "version not carried from the contract"; exit 1; }
+
+  # lidl() is implemented by the uniform host glue as well as current language
+  # providers, so a hand-written C ABI provider (notably Nim) gets the built-in
+  # too. The embedded bytes are parser/serializer canonical, not the indented
+  # source heredoc above, and the method is present in introspection even when
+  # an older provider's logos_module_get_methods() omits it.
+  grep -q 'methodName == QStringLiteral("lidl")' $c \
+    || { echo "lidl() is not intercepted by the host glue"; exit 1; }
+  grep -Fq 'QString::fromUtf8("module sample_probe {\n' $c \
+    || { echo "lidl() does not embed the canonical contract"; exit 1; }
+  grep -q 'builtin\[QStringLiteral("name")\] = QStringLiteral("lidl")' $c \
+    || { echo "lidl() is missing from host-side introspection"; exit 1; }
+  grep -q 'builtin\[QStringLiteral("returnType")\] = QStringLiteral("QString")' $c \
+    || { echo "lidl() introspection does not expose the Qt string type"; exit 1; }
 
   # Every C-ABI entry point the glue exists to forward across. Losing any one
   # of these is a module that loads and then silently does nothing.

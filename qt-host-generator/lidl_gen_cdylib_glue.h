@@ -17,4 +17,6 @@
 // same `logos_module_dispatch` symbol, so the provider ABI is unchanged.
 // Default false = single (callMethod blocks on the C ABI and returns the answer).
 QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi = false);
-QString lidlMakeCdylibGlueSource(const ModuleDecl& module, bool multi = false);
+QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
+                                 const QString& lidlDocument,
+                                 bool multi = false);

@@ -450,6 +450,7 @@ in {
     externalLibs ? {},
     preConfigure ? "",
     postInstall ? "",
+    lidlContractInstall ? "",
   }:
   let
     gen = mkGeneration {
@@ -478,6 +479,13 @@ in {
     pname = "${commonArgs.pname}-lib";
 
     inherit src;
+
+    # nix-bundle-lgx maps this installed contract directory to root-level
+    # assets/lidl. It is kept out of extraDirs so it is not duplicated inside
+    # every platform variant.
+    passthru = (commonArgs.passthru or { }) // {
+      lgxAssets = { lidl = "share/logos"; };
+    };
 
     # Qt embeds plugin metadata in a special section (.note.qt.metadata on ELF,
     # __TEXT,__qt_pluginmeta on Mach-O). Stripping can remove it on macOS.
@@ -621,16 +629,19 @@ in {
         ls -la $out/include/ 2>/dev/null || echo "No files"
       fi
 
-      # Ship the LIDL events sidecar (emitted by `--from-header` codegen
-      # for universal modules that declare any `logos_events:` block).
-      # The sidecar is read by buildHeaders.nix to generate typed
-      # `on<EventName>(callback)` accessors on the consumer wrapper.
+      # Ship this module's own authored LIDL contract when it has one. UI
+      # plugins emit no module-call surface, so their generation produces no
+      # sidecar and they intentionally ship dependency contracts only.
       _LIDL_SIDECAR="$LOGOS_MODULE_SOURCE_DIR/generated_code/${config.name}.lidl"
       if [ -f "$_LIDL_SIDECAR" ]; then
         mkdir -p $out/share/logos
         cp "$_LIDL_SIDECAR" "$out/share/logos/${config.name}.lidl"
-        echo "Installed LIDL events sidecar: $out/share/logos/${config.name}.lidl"
+        echo "Installed module LIDL contract: $out/share/logos/${config.name}.lidl"
       fi
+
+      # Ship the contracts used to generate this module's dependency clients:
+      # dependencies + optional_dependencies + interface_dependencies.
+      ${lidlContractInstall}
 
       # Run any custom postInstall hook
       ${postInstall}
@@ -698,6 +709,7 @@ in {
     externalLibs ? {},
     preConfigure ? "",
     postInstall ? "",
+    lidlContractInstall ? "",
   }:
   let
     gen = mkGeneration {

@@ -37,6 +37,7 @@ in {
     extraEnv ? {},
     preConfigure ? "",
     postInstall ? "",
+    lidlContractInstall ? "",
   }:
   let
     commonArgs = {
@@ -62,7 +63,7 @@ in {
       };
     };
   in mkBuildPlugin.build {
-    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall;
+    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall lidlContractInstall;
     logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
   };
 
@@ -86,6 +87,7 @@ in {
     extraEnv ? {},
     preConfigure ? "",
     postInstall ? "",
+    lidlContractInstall ? "",
   }:
   let
     commonArgs = {
@@ -111,7 +113,7 @@ in {
       };
     };
   in mkBuildPlugin.generate {
-    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall;
+    inherit pkgs src config commonArgs moduleDeps interfaceDeps staticDeps externalLibs preConfigure postInstall lidlContractInstall;
     logosSdk = null;  # not used by buildPlugin.nix directly, kept for compat
   };
 
