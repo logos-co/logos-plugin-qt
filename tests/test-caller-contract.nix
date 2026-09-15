@@ -206,9 +206,9 @@ pkgs.runCommand "logos-qt-host-caller-contract-test" {
   # scope and never will. Pulling inside the worker therefore reads Unknown on
   # EVERY platform -- and passes any test that only ever has one caller.
   pull_line=$(grep -n "currentCallerJson()" multi.code | head -1 | cut -d: -f1)
-  thread_line=$(grep -n "QThread::create(" multi.code | head -1 | cut -d: -f1)
+  thread_line=$(grep -n 'm_workerPool.start(\[method' multi.code | head -1 | cut -d: -f1)
   if [ -z "$pull_line" ] || [ -z "$thread_line" ] || [ "$pull_line" -ge "$thread_line" ]; then
-    echo "multi: the pull (line $pull_line) must happen BEFORE QThread::create"
+    echo "multi: the pull (line $pull_line) must happen BEFORE m_workerPool.start"
     echo "(line $thread_line), on the dispatch thread. Inside the worker there is"
     echo "no CallerScope and the answer is Unknown on every platform."
     exit 1
@@ -219,7 +219,7 @@ pkgs.runCommand "logos-qt-host-caller-contract-test" {
   # callerJson does not compile -- but a REFERENCE capture would compile and
   # dangle. The capture list is one line by construction (see
   # test-qt-host-generator.nix, which greps it the same way).
-  worker_capture=$(grep -o 'QThread::create(\[[^]]*\]' multi.code)
+  worker_capture=$(grep -o 'm_workerPool.start(\[method[^]]*\]' multi.code)
   printf '%s' "$worker_capture" | grep -q "callerJson" || {
     echo "multi worker lambda does not capture callerJson: $worker_capture"; exit 1; }
   if printf '%s' "$worker_capture" | grep -qE '&[A-Za-z_]*callerJson|callerJson *&'; then

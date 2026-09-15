@@ -25,8 +25,9 @@ QString cppStringLiteral(const QString& value)
 
 } // namespace
 
-QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
+QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi, int maxWorkers)
 {
+    Q_UNUSED(maxWorkers);
     const QString className = lidlToPascalCase(qs(module.name));
     QString c;
     QTextStream s(&c);
@@ -59,14 +60,16 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
     s << "#include <QVariant>\n";
     s << "#include <QVariantList>\n";
     if (multi) {
-        // concurrency:"multi" defers behind the ordinary callMethod: a worker
-        // runs the handler and the result is pushed back as a completion event
+        // concurrency:"multi" defers behind the ordinary callMethod: a bounded
+        // pool runs handlers and pushes results back as completion events
         // (logos_async_dispatch.h) — no new provider/host vtable method.
         s << "#include \"logos_async_dispatch.h\"\n";
+        s << "#include <QSemaphore>\n";
         s << "#include <QVariantMap>\n";
         s << "#include <atomic>\n";
         s << "#include <cstdint>\n";
         s << "#include <QThread>\n";
+        s << "#include <QThreadPool>\n";
     }
     s << "#include <nlohmann/json.hpp>\n\n";
 
@@ -79,9 +82,10 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
     s << "class " << className << "CdylibProvider : public LogosProviderBase {\n";
     s << "public:\n";
     if (multi) {
-        s << "    // concurrency:\"multi\": callMethod does NOT block — it hands the call to a\n";
-        s << "    // worker and returns a pending sentinel at once, then the worker pushes the\n";
-        s << "    // result back as a completion event. This is the SAME callMethod slot every\n";
+        s << "    " << className << "CdylibProvider();\n";
+        s << "    // concurrency:\"multi\": callMethod does NOT block — it queues the call on\n";
+        s << "    // a bounded worker pool and returns a pending sentinel at once, then a worker\n";
+        s << "    // pushes the result back as a completion event. This is the SAME callMethod slot every\n";
         s << "    // provider has — there is no extra provider/host vtable method, so the\n";
         s << "    // provider ABI is unchanged and an old host loads + forwards this module.\n";
     }
@@ -96,8 +100,10 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
     s << "private:\n";
     s << "    EventCallback m_eventCallback;\n";
     s << "    static void emitTrampoline(const char* eventName, const char* dataJson, void* userData);\n";
-    if (multi)
+    if (multi) {
         s << "    std::atomic<std::uint64_t> m_callCounter{0};  // unique deferred-call ids\n";
+        s << "    QThreadPool m_workerPool;  // bounded, reusable dispatch workers\n";
+    }
     s << "};\n\n";
 
     // The root plugin must also implement PluginInterface — logos_host's
@@ -132,7 +138,8 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi)
 
 QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
                                  const QString& lidlDocument,
-                                 bool multi)
+                                 bool multi,
+                                 int maxWorkers)
 {
     const QString className = lidlToPascalCase(qs(module.name));
     const QString provider = className + "CdylibProvider";
@@ -281,15 +288,40 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         s << "    return logos::nlohmannToQVariant(jResult);\n";
         s << "}\n\n";
     } else {
-        // concurrency:"multi": callMethod does NOT block. Marshal the args, hand
-        // the call to a worker thread (the cdylib's logos_module_dispatch is
-        // thread-safe in multi mode), and return a PENDING SENTINEL immediately so
-        // the dispatch thread is freed for other callers. When the worker
+        // concurrency:"multi": callMethod does NOT block. Marshal the args and
+        // queue the call on a bounded pool (the cdylib's logos_module_dispatch is
+        // thread-safe in multi mode), then return a PENDING SENTINEL immediately
+        // so the dispatch thread is freed for other callers. When a worker
         // finishes it pushes the result back as a completion event keyed by
         // callId, over the provider's existing event listener; the consumer
         // transport awaits it. This rides the ORDINARY callMethod slot — there is
         // no new provider/host vtable method, so the provider ABI is unchanged and
         // an old host loads + forwards this module unmodified.
+        s << provider << "::" << provider << "()\n{\n";
+        s << "    const int configured = " << maxWorkers << ";\n";
+        s << "    const int workers = configured > 0 ? configured : qMax(1, QThread::idealThreadCount());\n";
+        s << "    m_workerPool.setMaxThreadCount(workers);\n";
+        s << "    // Keep the bounded set reusable for the provider's lifetime. A pool that\n";
+        s << "    // expires idle workers would return to creating OS threads under later load.\n";
+        s << "    m_workerPool.setExpiryTimeout(-1);\n";
+        s << "    if (configured > 0) {\n";
+        s << "        // Materialize explicitly capped workers before module code can open\n";
+        s << "        // sockets. QThread event dispatchers consume OS descriptors themselves;\n";
+        s << "        // lazy creation after a networking spike can otherwise abort in Qt.\n";
+        s << "        QSemaphore entered;\n";
+        s << "        QSemaphore release;\n";
+        s << "        QSemaphore finished;\n";
+        s << "        for (int i = 0; i < workers; ++i)\n";
+        s << "            m_workerPool.start([&entered, &release, &finished] {\n";
+        s << "                entered.release();\n";
+        s << "                release.acquire();\n";
+        s << "                finished.release();\n";
+        s << "            });\n";
+        s << "        entered.acquire(workers);\n";
+        s << "        release.release(workers);\n";
+        s << "        finished.acquire(workers);\n";
+        s << "    }\n";
+        s << "}\n\n";
         s << "QVariant " << provider << "::callMethod(const QString& methodName, const QVariantList& args)\n{\n";
         s << builtInLidl;
         s << "    nlohmann::json jArgs = nlohmann::json::array();\n";
@@ -323,8 +355,8 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         //
         // callMethod is still ENTERED on the thread ModuleProxy delivered the
         // call on, which is the thread whose CallerScope is open and whose
-        // thread-local holds the document. The worker below is a brand-new
-        // QThread: it has no scope, never had one, and cannot acquire one. So
+        // thread-local holds the document. The pooled worker below is a
+        // different QThread: it has no scope, never had one, and cannot acquire one. So
         // the document is captured here, by value, as one more of the worker's
         // captured values — exactly as `method`, `dumped` and `callId` are.
         //
@@ -340,12 +372,14 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         s << "    // CallerScope is open. The worker below has none and never will, so a\n";
         s << "    // pull made in there answers Unknown on every platform -- and compiles.\n";
         s << "    const std::string callerJson = currentCallerJson();\n";
-        // Run the handler on a real QThread, not a raw std::thread: if the handler
+        // Run the handler on a real QThread pool, not a raw std::thread: if the handler
         // makes an outbound module->module call it spins nested QEventLoops (to
         // acquire the QtRO replica and await a deferred reply), and only a genuine
         // QThread carries a Qt event dispatcher that can drive those — an adopted
         // std::thread cannot pump the QtRO socket, so such calls would hang. The
         // client stays owned by this worker (inline, no cross-thread marshaling).
+        // The pool queues excess calls instead of creating one OS thread (and one
+        // event-dispatcher pipe) per request.
         // Built from the same two conditions that decide whether the locals
         // exist at all, rather than hand-written per case. There are FOUR
         // combinations of (has void methods, has result methods) and only two
@@ -359,7 +393,7 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         // `callerJson` is captured UNCONDITIONALLY even though only the guarded
         // push reads it, so the capture list stays ONE LINE. Both this suite and
         // tests/test-qt-host-generator.nix read that list with
-        // `grep -o 'QThread::create(\[[^]]*\]'`, which cannot span lines, and a
+        // `grep -o 'm_workerPool.start(\[method[^]]*\]'`, which cannot span lines, and a
         // preprocessor conditional inside the brackets would take the list off
         // the single line those greps depend on. The #else below spends the
         // capture instead, so no compiler warns about it below protocol 0.6.
@@ -367,7 +401,7 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         if (!voidMethods.isEmpty())   workerCaptures += ", isVoidMethod";
         if (!resultMethods.isEmpty()) workerCaptures += ", isResultMethod";
         workerCaptures += ", callId, eventCb, callerJson";
-        s << "    QThread* worker = QThread::create([" << workerCaptures << "]() {\n";
+        s << "    m_workerPool.start([" << workerCaptures << "]() {\n";
         // The push/dispatch/pop triple moves VERBATIM into the worker: the
         // module image's caller store is per-thread too, so the thread that
         // runs the handler is the thread that has to be told.
@@ -438,8 +472,6 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
         s << "        if (eventCb)\n";
         s << "            eventCb(logos::callCompleteEvent(), QVariantList{ callId, value });\n";
         s << "    });\n";
-        s << "    QObject::connect(worker, &QThread::finished, worker, &QThread::deleteLater);\n";
-        s << "    worker->start();\n";
         s << "    QVariantMap pending;\n";
         s << "    pending[logos::pendingCallKey()] = callId;\n";
         s << "    return pending;\n";
