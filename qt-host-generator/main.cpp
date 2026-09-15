@@ -108,11 +108,18 @@ int main(int argc, char* argv[])
             << ": " << pr.error << "\n";
         return 4;
     }
+    QString builtinsError;
+    if (!lidlValidateBuiltins(pr.module, &builtinsError)) {
+        err << lidlPath << ": " << builtinsError << "\n";
+        return 4;
+    }
     const ModuleDecl& mod = pr.module;
+    const QString lidlDocument = lidlSerialize(mod);
 
     QList<Out> outs;
     outs.append({qs(mod.name) + "_cdylib_glue.h", lidlMakeCdylibGlueHeader(mod, multi)});
-    outs.append({qs(mod.name) + "_cdylib_glue.cpp", lidlMakeCdylibGlueSource(mod, multi)});
+    outs.append({qs(mod.name) + "_cdylib_glue.cpp",
+                 lidlMakeCdylibGlueSource(mod, lidlDocument, multi)});
 
     const int rc = writeAll(outs, outputDir, out, err);
     out.flush();

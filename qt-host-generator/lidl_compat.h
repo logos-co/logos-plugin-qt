@@ -13,7 +13,9 @@
 // logos-cpp-sdk dependency on this repo for no gain.
 
 #include "lidl/ast.hpp"
+#include "lidl/identity.hpp"
 #include "lidl/parser.hpp"
+#include "lidl/serializer.hpp"
 
 #include <QString>
 #include <QTextStream>
@@ -37,6 +39,21 @@ using LidlParseResult = lidl::ParseResult;
 inline lidl::ParseResult lidlParse(const QString& source)
 {
     return lidl::parse(source.toStdString());
+}
+
+inline QString lidlSerialize(const ModuleDecl& module)
+{
+    return QString::fromStdString(lidl::serialize(module));
+}
+
+inline bool lidlValidateBuiltins(ModuleDecl module, QString* error)
+{
+    const lidl::IdentityInjection result = lidl::injectIdentityMethods(module);
+    if (result.hasError()) {
+        if (error) *error = QString::fromStdString(result.error);
+        return false;
+    }
+    return true;
 }
 
 #endif // LIDL_COMPAT_H
