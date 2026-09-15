@@ -151,19 +151,14 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
     for (const MethodDecl& md : module.methods)
         if (md.resultReturn) resultMethods << qs(md.name);
 
-    // Which methods return `void`. Derived from the shared contract, so every
+    // Which methods return no value. Derived from the shared contract, so every
     // cdylib backend converges here regardless of the language behind the C ABI.
-    //
-    // `void` is not a LIDL builtin — it parses as Named("void") — and the
-    // backends handled that Named differently: the C++ cdylib has an arm that
-    // returns "true", the Rust one falls to its catch-all and returns JSON null.
-    // Null is the failure token further up (logos_json_convert turns it into an
-    // invalid QVariant, which core_service reports as METHOD_FAILED), so the same
-    // void method answered `true` from one provider and "the call failed" from
-    // the other, on a contract they share.
+    // No-return is structural in LIDL: an absent returnType, never a fake data
+    // type. The provider ABI still reports success as JSON true so it cannot be
+    // confused with the transport's null failure token.
     QStringList voidMethods;
     for (const MethodDecl& md : module.methods)
-        if (!md.resultReturn && md.returnType.name == "void") voidMethods << qs(md.name);
+        if (!md.resultReturn && !md.returnType) voidMethods << qs(md.name);
 
     // The protocol-0.6 guard, spelled once and emitted at four sites (the push
     // and the pop, in each of the two concurrency branches). MAJOR-aware and
