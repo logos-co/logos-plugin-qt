@@ -22,17 +22,49 @@ jobs:
           extra-nix-config: |
             experimental-features = nix-command flakes
 
+      # Checks run only when named below; fail if one has no step.
+      - name: Every check has a step
+        run: |
+          checks=$(nix eval --raw '.#checks.x86_64-linux' --apply 'cs: toString (builtins.attrNames cs)')
+          missing=0
+          for c in $checks; do
+            grep -qF "'.#checks.x86_64-linux.$c'" .github/workflows/ci.yml \
+              || { echo "::error::no step builds checks.x86_64-linux.$c"; missing=1; }
+          done
+          exit "$missing"
+
       - name: Build vanilla Qt plugin test
         run: nix build '.#checks.x86_64-linux.vanilla-plugin'
 
       - name: Header generator guard test
         run: nix build '.#checks.x86_64-linux.header-generator-guard'
 
+      - name: Headers emitter routing test
+        run: nix build -L '.#checks.x86_64-linux.headers-emitter-routing'
+
       - name: External library staging test
         run: nix build '.#checks.x86_64-linux.external-lib-staging'
 
+      - name: Consumer API style gate test
+        run: nix build -L '.#checks.x86_64-linux.consumer-api-style-gate'
+
       - name: Build Qt host runtime
         run: nix build '.#checks.x86_64-linux.qt-host'
+
+      - name: Qt host shared runtime layering test
+        run: nix build -L '.#checks.x86_64-linux.shared-runtime-layering'
+
+      - name: Unload hook contract test
+        run: nix build -L '.#checks.x86_64-linux.unload-contract'
+
+      - name: Caller identity contract test
+        run: nix build -L '.#checks.x86_64-linux.caller-contract'
+
+      - name: Caller identity invokable test
+        run: nix build -L '.#checks.x86_64-linux.caller-invokable'
+
+      - name: Consumer admission test
+        run: nix build -L '.#checks.x86_64-linux.consumer-admission'
 
       - name: Qt host glue generator test
         run: nix build '.#checks.x86_64-linux.qt-host-generator'
