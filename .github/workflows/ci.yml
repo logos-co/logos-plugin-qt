@@ -33,3 +33,7 @@ jobs:
 
       - name: Qt host glue generator test
         run: nix build '.#checks.x86_64-linux.qt-host-generator'
+
+      # The only check that runs the emitted callMethod (bounded pool, lidl()).
+      - name: Qt host glue compile and dispatch probes
+        run: nix build -L '.#checks.x86_64-linux.glue-compiles'
