@@ -11,9 +11,8 @@
 # So: build a real Qt plugin out of the emitted glue, exactly as a module build
 # does -- AUTOMOC over the plugin class, find_package(logos-qt-host), the
 # include/core layout the runtime installs -- with the module-impl C ABI
-# satisfied by a stub instead of a real cdylib. Nothing here executes; the claim
-# is only that the text the generator writes is valid C++ against the headers
-# this repo ships.
+# satisfied by a stub instead of a real cdylib. Two probes also run the emitted
+# callMethod: the bounded multi worker pool, and the lidl() built-in.
 #
 # --no-undefined is what makes the LINK meaningful. A MODULE library on ELF
 # happily leaves undefined symbols for load time by default, which would let a
@@ -96,10 +95,12 @@ pkgs.stdenv.mkDerivation {
     namespace {
     std::atomic<int> g_active{0};
     std::atomic<int> g_peak{0};
+    std::atomic<int> g_dispatches{0};
     }
 
     extern "C" {
     char* logos_module_dispatch(const char*, const char*) {
+      g_dispatches.fetch_add(1);
       const int active = g_active.fetch_add(1) + 1;
       int peak = g_peak.load();
       while (active > peak && !g_peak.compare_exchange_weak(peak, active)) {}
@@ -134,6 +135,7 @@ pkgs.stdenv.mkDerivation {
     const char* logos_module_get_protocol_version(void) { return LOGOS_PROTOCOL_VERSION_STRING; }
     void logos_module_string_free(char* s) { std::free(s); }
     int bounded_dispatch_probe_peak(void) { return g_peak.load(); }
+    int glue_probe_dispatch_count(void) { return g_dispatches.load(); }
     }
     EOF
 
@@ -180,6 +182,60 @@ pkgs.stdenv.mkDerivation {
     }
     EOF
 
+    # lidl() with arguments must be refused like any zero-parameter method,
+    # on both concurrency paths. It used to answer an empty QVariant.
+    cat > lidl_builtin_probe.cpp <<'EOF'
+    #include "glue_probe_cdylib_glue.h"
+
+    #include <QCoreApplication>
+    #include <QDebug>
+    #include <QVariantMap>
+
+    #include <cstdio>
+
+    extern "C" int glue_probe_dispatch_count(void);
+
+    static const char* g_self = "lidl_builtin_probe";
+
+    static int fail(const char* what, const QVariant& got) {
+      QString shown;
+      QDebug(&shown) << got;
+      std::fprintf(stderr, "%s: %s; got %s\n", g_self, what, qPrintable(shown));
+      return 1;
+    }
+
+    static int expectRejection(GlueProbeCdylibProvider& provider, const QVariantList& args) {
+      const QVariantMap want{
+        {QStringLiteral("code"), QStringLiteral("invalid_args")},
+        {QStringLiteral("message"), QStringLiteral("expected 0 arguments, got %1").arg(args.size())},
+        {QStringLiteral("origin"), QStringLiteral("glue_probe")},
+      };
+      const QVariant got = provider.callMethod(QStringLiteral("lidl"), args);
+      if (got.typeId() != QMetaType::QVariantMap || got.toMap() != want)
+        return fail("lidl() with arguments is not the invalid_args rejection", got);
+      return 0;
+    }
+
+    int main(int argc, char** argv) {
+      QCoreApplication app(argc, argv);
+      g_self = argv[0];
+      GlueProbeCdylibProvider provider;
+
+      const QVariant doc = provider.callMethod(QStringLiteral("lidl"), {});
+      if (doc.typeId() != QMetaType::QString
+          || !doc.toString().startsWith(QStringLiteral("module glue_probe {")))
+        return fail("lidl() no longer answers the canonical contract", doc);
+
+      if (expectRejection(provider, {QStringLiteral("junk")})) return 1;
+      if (expectRejection(provider, {1, 2})) return 1;
+
+      if (glue_probe_dispatch_count() != 0)
+        return fail("lidl() reached the module dispatch", glue_probe_dispatch_count());
+      std::printf("%s: ok\n", g_self);
+      return 0;
+    }
+    EOF
+
     cat > CMakeLists.txt <<'EOF'
     cmake_minimum_required(VERSION 3.14)
     project(LogosGlueCompileProbe CXX)
@@ -219,6 +275,19 @@ pkgs.stdenv.mkDerivation {
       if(NOT APPLE)
         target_link_options(''${variant}_glue PRIVATE -Wl,--no-undefined)
       endif()
+
+      add_executable(lidl_builtin_probe_''${variant}
+        lidl_builtin_probe.cpp
+        ''${variant}/glue_probe_cdylib_glue.cpp
+        ''${variant}/glue_probe_cdylib_glue.h
+        abi_stub.cpp)
+      target_include_directories(lidl_builtin_probe_''${variant} PRIVATE
+        ''${CMAKE_CURRENT_SOURCE_DIR}/''${variant}
+        ''${LOGOS_QT_HOST_PREFIX}/include/core
+        ''${LOGOS_PROTOCOL_SRC}/cpp)
+      target_link_libraries(lidl_builtin_probe_''${variant} PRIVATE
+        logos-qt-host::logos_qt_host
+        Qt6::Core Qt6::RemoteObjects)
     endforeach()
 
     add_executable(bounded_dispatch_probe
@@ -240,6 +309,8 @@ pkgs.stdenv.mkDerivation {
       -DLOGOS_PROTOCOL_SRC=${protocolSrc}
     cmake --build build
     ./build/bounded_dispatch_probe
+    ./build/lidl_builtin_probe_single
+    ./build/lidl_builtin_probe_multi
 
     runHook postBuild
   '';
