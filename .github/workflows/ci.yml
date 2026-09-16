@@ -28,6 +28,9 @@ jobs:
       - name: Header generator guard test
         run: nix build '.#checks.x86_64-linux.header-generator-guard'
 
+      - name: External library staging test
+        run: nix build '.#checks.x86_64-linux.external-lib-staging'
+
       - name: Build Qt host runtime
         run: nix build '.#checks.x86_64-linux.qt-host'
 

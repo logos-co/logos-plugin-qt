@@ -365,12 +365,16 @@ let
           echo "Copying headers from ${extLib.name}..."
           cp -r "${libInfo}/include"/* lib/ 2>/dev/null || true
         fi
+        # The copies keep the store's read-only modes, and cmakeConfigurePhase's
+        # fixCmakeFiles rewrites every staged *.cmake (lib/cmake/<pkg>/) in place.
+        chmod -R u+w lib
       '' else if extLib ? vendor_path then ''
         echo "Staging vendor library ${extLib.name} from ${extLib.vendor_path}..."
         mkdir -p lib
         for f in "${src}/${extLib.vendor_path}"/lib*; do
           [ -f "$f" ] && cp "$f" lib/ || true
         done
+        chmod -R u+w lib
       '' else ""
     ) config.external_libraries;
 
