@@ -159,6 +159,13 @@
           inherit (rawLib) buildHeaders;
         };
 
+        # External libraries staged into lib/ must be writable: fixCmakeFiles
+        # rewrites their lib/cmake/ right after preConfigure.
+        external-lib-staging = import ./tests/test-external-lib-staging.nix {
+          inherit pkgs;
+          inherit (rawLib) buildPlugin;
+        };
+
         # WHICH consumer surface buildPlugin picks, and that `--binding origin`
         # cannot be reached from a Qt PLUGIN's metadata. That flag turns off the
         # LpBridge token mirror; correct in a cdylib image, a silent
