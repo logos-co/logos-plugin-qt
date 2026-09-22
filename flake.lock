@@ -98,15 +98,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1789676914,
-        "narHash": "sha256-9Ie1cgBx3tSJt/w58mHQIw4b61mxcEFGsuksWSyhmso=",
+        "lastModified": 1790087997,
+        "narHash": "sha256-Hvt/9/fLgXgXJcj32QOY+m5uG8ieNV3hsS21nRkZzVk=",
         "owner": "logos-co",
         "repo": "logos-protocol",
-        "rev": "8bbc027c99505c3c2f043265f8c1ae8ff899bdff",
+        "rev": "7d6c446377a4eb37e28f4bcdb755d72f7e3231b9",
         "type": "github"
       },
       "original": {
         "owner": "logos-co",
+        "ref": "codex/qt-remote-plain",
         "repo": "logos-protocol",
         "type": "github"
       }
