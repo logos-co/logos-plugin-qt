@@ -111,7 +111,7 @@ class QObject;
 // ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 9))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 10))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::admitConsumer must move in the SAME wave. Review \
