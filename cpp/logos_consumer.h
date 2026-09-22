@@ -69,6 +69,10 @@ class QObject;
 // credential adoption, caller identity, or consumer admission; the Qt host
 // continues to seed consumers exactly as it did at 0.10.
 //
+// RAISED 11 -> 12 for staged provider publication and a protocol-owned string
+// copy helper. Both are additive and change no private store, bootstrap key,
+// credential adoption, caller identity, or consumer-admission behavior.
+//
 // RAISED 8 -> 9 for logos-protocol 0.9 (subscription continuity: a liveness
 // watchdog plus a per-TARGET status callback, generation counter and restart
 // policy). Unlike the 0.8 wave below, this repo has nothing to move: 0.9 does
@@ -117,7 +121,7 @@ class QObject;
 // ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 11))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 12))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::admitConsumer must move in the SAME wave. Review \
