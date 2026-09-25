@@ -21,6 +21,10 @@
 # not yet accepted — the window both hosts' comments say they close, now closed
 # by construction instead of by comment.
 #
+# adoptAdmittedConsumer, the verb for a runtime whose capability_module is the
+# token authority, is checked too: it installs a credential minted elsewhere and
+# registers nothing.
+#
 # WHAT THIS CANNOT SHOW: it is one process and one image, so it says nothing
 # about the cross-image concerns (a module cdylib's own TokenManager). Those are
 # guarded in logos-protocol and by the symbol gates downstream.
@@ -79,6 +83,7 @@ pkgs.stdenv.mkDerivation {
 
     cat > probe.cpp <<'EOF'
     #include "logos_api.h"
+    #include "logos_api_client.h"
     #include "logos_consumer.h"
 
     #include "logos_caller_scope.h"
@@ -265,6 +270,44 @@ pkgs.stdenv.mkDerivation {
         check(logos::isUnauthorizedSentinel(
                   capProxy.callRemoteMethod(first, QStringLiteral("work"), {})),
               "the superseded credential does not");
+
+        // ── adoptAdmittedConsumer: capability_module minted it elsewhere ─────
+        //
+        // With capability as the token authority the runtime admits the name
+        // (core_service.admitConsumer) and this image only installs. The stand-in
+        // learns the credential over the host's channel, as that admission would.
+        const QString adopted = QStringLiteral("probe_view_adopted");
+        const QString minted  = QStringLiteral("probe-minted-by-capability");
+        hostApi.getClient(QStringLiteral("capability_module"))
+            ->informModuleToken(hostAnchor, adopted, minted);
+        const int informsBefore = capability.informs;
+        logos::ConsumerIdentity adoptedId = logos::adoptAdmittedConsumer(adopted, minted, &app);
+        check(static_cast<bool>(adoptedId), "adoptAdmittedConsumer returns an identity");
+        check(capability.informs == informsBefore, "and registers nothing itself");
+        TokenManager* adoptedStore = adoptedId.api ? adoptedId.api->getTokenManager() : nullptr;
+        check(adoptedStore && adoptedStore != &TokenManager::instance()
+                  && adoptedStore->getToken(QStringLiteral("capability_module")) == minted
+                  && adoptedStore->tokenCount() == TokenManager::bootstrapKeys().size(),
+              "its private store holds exactly the credential it was given");
+        check(dispatched(capProxy.callRemoteMethod(minted, QStringLiteral("work"), {}))
+                  && capability.seenCaller == moduleDoc(adopted),
+              "it authorizes, named as itself");
+        check(!logos::adoptAdmittedConsumer(QStringLiteral("probe_view_empty"), QString(), &app),
+              "an empty credential is refused");
+        check(!logos::adoptAdmittedConsumer(QStringLiteral("probe_view_anchor"), hostAnchor, &app),
+              "the host's anchor is refused");
+
+        const QString reminted = QStringLiteral("probe-reminted");
+        if (adoptedStore) adoptedStore->saveToken(QStringLiteral("some_target"),
+                                                  QStringLiteral("probe-stale"));
+        check(logos::replaceConsumerCredential(adoptedId.api, reminted),
+              "replaceConsumerCredential installs a re-admission's credential");
+        check(adoptedStore && adoptedStore->getToken(QStringLiteral("capability_module")) == reminted
+                  && adoptedStore->getToken(QStringLiteral("some_target")).isEmpty(),
+              "and drops the previous incarnation's tokens");
+        LogosAPI neverAdopted(QStringLiteral("probe_view_never_adopted"), &app);
+        check(!logos::replaceConsumerCredential(&neverAdopted, reminted),
+              "an identity that was never adopted is refused");
 
         // ── adoptConsumerCredential: the co-process form ─────────────────────
         //

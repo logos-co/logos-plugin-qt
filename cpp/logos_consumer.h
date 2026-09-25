@@ -154,7 +154,30 @@ struct ConsumerIdentity {
 };
 
 /**
- * @brief Admit a non-module consumer under `identity`.
+ * @brief Adopt an identity the runtime admitted: core_service.admitConsumer
+ * (logos::host::LogosCore::admitConsumer), with capability_module as the token
+ * authority, minted and recorded `credential` for `identity`.
+ *
+ * Isolates the identity's store, builds its LogosAPI and installs the
+ * credential; it registers nothing, because capability_module already holds
+ * it. Falsy when the name cannot be isolated, the credential is empty, or it
+ * is the host's anchor.
+ */
+LOGOS_QT_HOST_API ConsumerIdentity adoptAdmittedConsumer(const QString& identity,
+                                                         const QString& credential,
+                                                         QObject* parent = nullptr);
+
+/**
+ * @brief Install a re-admission's credential in an adopted identity's store,
+ * dropping the previous incarnation's tokens. False when it was never adopted.
+ */
+LOGOS_QT_HOST_API bool replaceConsumerCredential(LogosAPI* consumerApi,
+                                                 const QString& credential);
+
+/**
+ * @brief LEGACY: admit a non-module consumer under `identity`, for runtimes
+ * whose capability_module is not the token authority. With one, use
+ * adoptAdmittedConsumer: the host is no longer a trusted channel to register on.
  *
  * ONE SENTENCE: gives a name a private token store, mints its credential, tells
  * capability_module about it, and puts it in that store — so the identity can
@@ -197,7 +220,9 @@ LOGOS_QT_HOST_API ConsumerIdentity admitConsumer(const QString& identity,
                                                  QObject* parent = nullptr);
 
 /**
- * @brief Rotate an already-admitted consumer's credential — a reload.
+ * @brief LEGACY: rotate an already-admitted consumer's credential — a reload.
+ * With capability_module as the authority, re-admit through core_service and
+ * call replaceConsumerCredential.
  *
  * Mint, register, RESET the identity's store, adopt. The reset is not
  * housekeeping: a reload re-registers, and ModuleProxy::saveToken overwrites
