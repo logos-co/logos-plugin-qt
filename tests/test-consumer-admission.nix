@@ -1,56 +1,21 @@
-# ADMITTING A NON-MODULE CONSUMER — the operation, run for real.
+# ADOPTING AN ADMITTED CONSUMER — the operation, run for real.
 #
-# logos::admitConsumer is the one place that performs the four steps a host used
-# to hand-roll: isolate the identity's token store, mint its credential,
-# REGISTER that credential with capability_module over the host's trusted
-# channel, and only then ADOPT it into the identity's own store. Two applications
-# spelled those steps out independently and one of them got the ORDER wrong, so
-# this probe checks the order rather than just the outcome.
+# The runtime admits a non-module consumer (a UI plugin, a shell's co-process):
+# a host asks core_service.admitConsumer and capability_module, the token
+# authority, mints and records its credential. logos::adoptAdmittedConsumer is
+# this image's half: an isolated token store for the name, with that credential
+# installed under the bootstrap keys, so the identity presents its OWN credential
+# and is named as itself. Nothing here mints or registers.
 #
-# WHY A REAL PROXY AND NOT A MOCK. Mock mode's informModuleToken returns true
-# unconditionally and records nothing, so an admitConsumer that registered with
-# the wrong token — or did not register at all — would pass. This runs a genuine
-# ModuleProxy for "capability_module" in Local mode, so the registration goes
-# through ModuleProxy::informModuleToken's trusted-channel gate and the
-# consumer's later call goes through ModuleProxy::authorize.
-#
-# THE ORDERING ASSERTION is the one that could not be made any other way: the
-# stand-in capability_module reads the consumer's private store from INSIDE the
-# informModuleToken push, and asserts it is still empty at that instant. Adopting
-# before registering would put a credential in the store that the trust root has
-# not yet accepted — the window both hosts' comments say they close, now closed
-# by construction instead of by comment.
-#
-# adoptAdmittedConsumer, the verb for a runtime whose capability_module is the
-# token authority, is checked too: it installs a credential minted elsewhere and
-# registers nothing.
+# WHY A REAL PROXY AND NOT A MOCK. Mock mode authorizes everything and records
+# nothing, so an identity presenting the wrong credential would pass. This runs a
+# genuine ModuleProxy for "capability_module" in Local mode, so the consumer's
+# call goes through ModuleProxy::authorize. The stand-in learns the credential
+# over the host's channel, as the runtime's admission would tell capability.
 #
 # WHAT THIS CANNOT SHOW: it is one process and one image, so it says nothing
 # about the cross-image concerns (a module cdylib's own TokenManager). Those are
 # guarded in logos-protocol and by the symbol gates downstream.
-#
-# VALIDATED BY RUNNING IT AGAINST CODE THAT DOES NOT HAVE THE MECHANISM — two
-# throwaway edits to cpp/logos_consumer.cpp, made and thrown away:
-#
-#   (N1) THE ADOPT STEP REMOVED — mint and register, then drop the credential on
-#        the floor. That is exactly what all five hand-rolled registration sites
-#        do today. 5 checks FAIL:
-#          its capability_module token is its OWN credential
-#          so is its core token
-#          and nothing else was installed
-#          NO LOCKOUT: the consumer's own credential authorizes at capability_module
-#          and it is NAMED as itself, not as the host
-#        i.e. the identity is registered under a credential nobody holds, and it
-#        can call nothing. On master this is masked by the private store having
-#        been born holding the host's anchor.
-#
-#   (N2) ADOPT BEFORE REGISTER — the two steps swapped. 2 checks FAIL:
-#          REGISTER BEFORE ADOPT: the store is still empty during the push
-#          and leaves no credential behind
-#        The second is the part that is easy to miss: with the order reversed, a
-#        registration that FAILS leaves a live credential in the consumer's store
-#        that capability_module never accepted. Ordering is not a stylistic
-#        preference here.
 { pkgs, qtHost }:
 
 pkgs.stdenv.mkDerivation {
@@ -102,7 +67,6 @@ pkgs.stdenv.mkDerivation {
     #include <QVariantList>
 
     #include <cstdio>
-    #include <functional>
     #include <string>
 
     static int g_failures = 0;
@@ -126,9 +90,6 @@ pkgs.stdenv.mkDerivation {
         }
         bool informModuleToken(const QString& moduleName, const QString& token) override {
             ++informs;
-            lastName  = moduleName;
-            lastToken = token;
-            if (onInform) onInform(moduleName);
             // A real capability_module also files the token in its own store;
             // mirrored here so the proxy's behaviour is the real one.
             TokenManager::instance().saveToken(moduleName, token);
@@ -147,10 +108,7 @@ pkgs.stdenv.mkDerivation {
 
         int         calls   = 0;
         int         informs = 0;
-        QString     lastName;
-        QString     lastToken;
         std::string seenCaller;
-        std::function<void(const QString&)> onInform;
     };
 
     static bool dispatched(const QVariant& r) {
@@ -176,71 +134,10 @@ pkgs.stdenv.mkDerivation {
 
         LogosAPI hostApi(QStringLiteral("core"), &app);
 
-        // ── the ordering assertion, armed before the admission ───────────────
-        //
-        // Read the consumer's store from INSIDE the push. Register-before-adopt
-        // means it is still empty at this instant.
-        bool storeWasEmptyAtRegistration = false;
-        bool sawRegistration             = false;
-        capability.onInform = [&](const QString& name) {
-            sawRegistration = true;
-            storeWasEmptyAtRegistration =
-                TokenManager::forIdentity(name).tokenCount() == 0;
-        };
-
-        const QString identity = QStringLiteral("probe_view_alpha");
-        logos::ConsumerIdentity consumer = logos::admitConsumer(identity, &hostApi, &app);
-        capability.onInform = nullptr;
-
-        check(static_cast<bool>(consumer), "admitConsumer returns an identity");
-        check(consumer.api != nullptr, "the consumer gets a LogosAPI of its own");
-        check(!consumer.credential.isEmpty(), "the consumer gets a credential");
-        check(consumer.credential != hostAnchor,
-              "the credential is NOT the host's anchor");
-        check(sawRegistration, "capability_module was told about the identity");
-        check(capability.lastName == identity,
-              "it was told about THIS identity");
-        check(capability.lastToken == consumer.credential,
-              "it was told the credential the caller was handed");
-        check(storeWasEmptyAtRegistration,
-              "REGISTER BEFORE ADOPT: the store is still empty during the push");
-
-        // ── the store the consumer actually presents from ────────────────────
-        TokenManager* store = consumer.api ? consumer.api->getTokenManager() : nullptr;
-        check(store != nullptr && store != &TokenManager::instance(),
-              "the consumer's store is private, not the ambient ring");
-        if (store) {
-            check(store->getToken(QStringLiteral("capability_module")) == consumer.credential,
-                  "its capability_module token is its OWN credential");
-            check(store->getToken(QStringLiteral("core")) == consumer.credential,
-                  "so is its core token");
-            check(store->tokenCount() == TokenManager::bootstrapKeys().size(),
-                  "and nothing else was installed");
-            check(store->getToken(QStringLiteral("capability_module")) != hostAnchor,
-                  "NO ANCHOR: it does not hold the host's credential");
-        }
-        check(TokenManager::identitiesSharingHostAnchor().isEmpty(),
-              "no isolated identity holds a value of the host's");
-
-        // ── NO LOCKOUT: the consumer can actually call capability_module ──────
-        const QString presented =
-            store ? store->getToken(QStringLiteral("capability_module")) : QString();
-        check(dispatched(capProxy.callRemoteMethod(presented, QStringLiteral("work"), {})),
-              "NO LOCKOUT: the consumer's own credential authorizes at capability_module");
-        check(capability.seenCaller == moduleDoc(identity),
-              "and it is NAMED as itself, not as the host");
-
-        // The control: the host still authorizes and still reads as the host.
-        check(dispatched(capProxy.callRemoteMethod(hostAnchor, QStringLiteral("work"), {})),
-              "control: the host's own anchor still authorizes");
-        check(capability.seenCaller == R"({"kind":"host"})",
-              "control: and still reads as the host");
-
         // ── an identity nobody admitted can do nothing ───────────────────────
         //
         // LogosAPI::forIdentity on its own is HALF an identity: an isolated
-        // store and no credential. That is what a host doing only the first
-        // hand-rolled step produces, and it must be inert rather than powerful.
+        // store and no credential. It must be inert rather than powerful.
         const QString halfIdentity = QStringLiteral("probe_view_half");
         LogosAPI* halfApi = LogosAPI::forIdentity(halfIdentity, &app);
         check(halfApi != nullptr, "forIdentity still builds an isolated LogosAPI");
@@ -251,25 +148,6 @@ pkgs.stdenv.mkDerivation {
         check(logos::isUnauthorizedSentinel(
                   capProxy.callRemoteMethod(halfPresents, QStringLiteral("work"), {})),
               "an unadmitted identity is refused");
-
-        // ── reissue: a reload rotates the credential ─────────────────────────
-        const QString first = consumer.credential;
-        if (store) store->saveToken(QStringLiteral("some_target"),
-                                    QStringLiteral("probe-stale-per-target"));
-        const QString second = logos::reissueConsumerCredential(consumer.api, &hostApi);
-        check(!second.isEmpty(), "reissue returns a new credential");
-        check(second != first, "and it is a different one");
-        if (store) {
-            check(store->getToken(QStringLiteral("capability_module")) == second,
-                  "the store presents the new credential");
-            check(store->getToken(QStringLiteral("some_target")).isEmpty(),
-                  "and the previous incarnation's per-target tokens are gone");
-        }
-        check(dispatched(capProxy.callRemoteMethod(second, QStringLiteral("work"), {})),
-              "the new credential authorizes");
-        check(logos::isUnauthorizedSentinel(
-                  capProxy.callRemoteMethod(first, QStringLiteral("work"), {})),
-              "the superseded credential does not");
 
         // ── adoptAdmittedConsumer: capability_module minted it elsewhere ─────
         //
@@ -285,13 +163,28 @@ pkgs.stdenv.mkDerivation {
         check(static_cast<bool>(adoptedId), "adoptAdmittedConsumer returns an identity");
         check(capability.informs == informsBefore, "and registers nothing itself");
         TokenManager* adoptedStore = adoptedId.api ? adoptedId.api->getTokenManager() : nullptr;
-        check(adoptedStore && adoptedStore != &TokenManager::instance()
-                  && adoptedStore->getToken(QStringLiteral("capability_module")) == minted
-                  && adoptedStore->tokenCount() == TokenManager::bootstrapKeys().size(),
-              "its private store holds exactly the credential it was given");
-        check(dispatched(capProxy.callRemoteMethod(minted, QStringLiteral("work"), {}))
-                  && capability.seenCaller == moduleDoc(adopted),
-              "it authorizes, named as itself");
+        check(adoptedStore != nullptr && adoptedStore != &TokenManager::instance(),
+              "the consumer's store is private, not the ambient ring");
+        if (adoptedStore) {
+            check(adoptedStore->getToken(QStringLiteral("capability_module")) == minted,
+                  "its capability_module token is the credential it was given");
+            check(adoptedStore->getToken(QStringLiteral("core")) == minted,
+                  "so is its core token");
+            check(adoptedStore->tokenCount() == TokenManager::bootstrapKeys().size(),
+                  "and nothing else was installed");
+        }
+        check(TokenManager::identitiesSharingHostAnchor().isEmpty(),
+              "no isolated identity holds a value of the host's");
+        check(dispatched(capProxy.callRemoteMethod(minted, QStringLiteral("work"), {})),
+              "NO LOCKOUT: the adopted credential authorizes at capability_module");
+        check(capability.seenCaller == moduleDoc(adopted),
+              "and it is NAMED as itself, not as the host");
+
+        // The control: the host still authorizes and still reads as the host.
+        check(dispatched(capProxy.callRemoteMethod(hostAnchor, QStringLiteral("work"), {})),
+              "control: the host's own anchor still authorizes");
+        check(capability.seenCaller == R"({"kind":"host"})",
+              "control: and still reads as the host");
         check(!logos::adoptAdmittedConsumer(QStringLiteral("probe_view_empty"), QString(), &app),
               "an empty credential is refused");
         check(!logos::adoptAdmittedConsumer(QStringLiteral("probe_view_anchor"), hostAnchor, &app),
@@ -311,9 +204,9 @@ pkgs.stdenv.mkDerivation {
 
         // ── adoptConsumerCredential: the co-process form ─────────────────────
         //
-        // ui-host's case: the parent minted and registered, this image only
-        // installs. Its store is its own image's instance(), which is correct
-        // for a separate process.
+        // ui-host's case: the runtime admitted it, this image only installs.
+        // Its store is its own image's instance(), which is correct for a
+        // separate process.
         LogosAPI coprocess(QStringLiteral("probe_view_coprocess"), &app);
         logos::adoptConsumerCredential(&coprocess, QStringLiteral("probe-coprocess-cred"));
         check(coprocess.getTokenManager()->getToken(QStringLiteral("core"))
@@ -321,20 +214,6 @@ pkgs.stdenv.mkDerivation {
               && coprocess.getTokenManager()->getToken(QStringLiteral("capability_module"))
                   == QStringLiteral("probe-coprocess-cred"),
               "adoptConsumerCredential installs under every bootstrap key");
-
-        // ── the failure path leaves nothing half-admitted ────────────────────
-        //
-        // A host with no capability_module token is not the trusted channel, so
-        // registration cannot happen — and the identity must end up with NO
-        // credential rather than an unregistered one.
-        LogosAPI strangerHost(QStringLiteral("probe_stranger_host"), &app);
-        strangerHost.getTokenManager();   // its store is the ambient ring
-        TokenManager::instance().removeToken(QStringLiteral("capability_module"));
-        const QString doomed = QStringLiteral("probe_view_doomed");
-        logos::ConsumerIdentity none = logos::admitConsumer(doomed, &strangerHost, &app);
-        check(!static_cast<bool>(none), "admitConsumer fails when the host is not trusted");
-        check(TokenManager::forIdentity(doomed).tokenCount() == 0,
-              "and leaves no credential behind");
 
         std::printf("%s\n", g_failures == 0 ? "ALL OK" : "FAILURES");
         return g_failures == 0 ? 0 : 1;
