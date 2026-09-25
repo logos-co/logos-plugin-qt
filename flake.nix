@@ -17,7 +17,7 @@
     # since the cdylib glue's forwarding is guarded on MINOR >= 3. That branch
     # has merged (logos-protocol#59): master is 0.4.0, so the guard opens.
     logos-protocol = {
-      url = "github:logos-co/logos-protocol/codex/qt-remote-plain";
+      url = "github:logos-co/logos-protocol/feat/plain-local-inproc";
       inputs.logos-nix.follows = "logos-nix";
     };
     # The canonical LIDL frontend logos-qt-host-generator parses contracts with.
