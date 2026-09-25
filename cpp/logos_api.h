@@ -196,12 +196,11 @@ public:
      * instead of finding the target's root token lying in the host's ambient
      * ring.
      *
-     * THIS IS HALF AN IDENTITY, AND MOST CALLERS WANT logos::admitConsumer
-     * (logos_consumer.h) INSTEAD. An empty store cannot authenticate that first
-     * requestModule either: something has to install the identity's own
-     * host-issued credential under the bootstrap keys, and something has to
-     * register that credential with capability_module first. admitConsumer does
-     * all of it in the one order that leaves no window. What is left here is the
+     * THIS IS HALF AN IDENTITY, AND MOST CALLERS WANT
+     * logos::adoptAdmittedConsumer (logos_consumer.h) INSTEAD. An empty store
+     * cannot authenticate that first requestModule either: the identity's own
+     * credential, which the runtime admitted, has to be installed under the
+     * bootstrap keys. adoptAdmittedConsumer does both; what is left here is the
      * store-selection primitive it is built on.
      *
      * Returns NULLPTR when the identity cannot be isolated, which happens only
@@ -211,12 +210,10 @@ public:
      * private store is the "looks fixed, isn't" outcome this whole mechanism
      * exists to avoid. Fail the load instead.
      *
-     * Isolating the store is only half of an identity. The host must also mint
-     * a credential, make the name a KNOWN CALLER by registering that credential
-     * with capability_module (`informModuleToken`), and install it in the
-     * identity's store — or the very first `requestModule` presents nothing and
-     * is refused. logos::admitConsumer is that operation; this function on its
-     * own yields an identity that can call nothing.
+     * Isolating the store is only half of an identity: without the admitted
+     * credential installed, the very first `requestModule` presents nothing and
+     * is refused. This function on its own yields an identity that can call
+     * nothing.
      */
     static LogosAPI* forIdentity(const QString& identity, QObject* parent = nullptr);
     

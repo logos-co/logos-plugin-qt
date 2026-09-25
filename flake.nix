@@ -17,7 +17,7 @@
     # since the cdylib glue's forwarding is guarded on MINOR >= 3. That branch
     # has merged (logos-protocol#59): master is 0.4.0, so the guard opens.
     logos-protocol = {
-      url = "github:logos-co/logos-protocol/feat/plain-local-inproc";
+      url = "github:logos-co/logos-protocol/feat/drop-legacy-mode";
       inputs.logos-nix.follows = "logos-nix";
     };
     # The canonical LIDL frontend logos-qt-host-generator parses contracts with.
@@ -229,11 +229,9 @@
           qtHost = self.packages.${system}.logos-qt-host;
         };
 
-        # logos::admitConsumer -- the one home for "make this non-module caller a
-        # known, credentialed identity". Runs a real ModuleProxy for
-        # capability_module so the registration goes through the trusted-channel
-        # gate and the consumer's call goes through the authorization scan, and
-        # asserts REGISTER-BEFORE-ADOPT from inside the push itself.
+        # logos::adoptAdmittedConsumer -- installing the credential the runtime
+        # admitted a non-module caller with. Runs a real ModuleProxy for
+        # capability_module and asserts the consumer authorizes AS ITSELF.
         consumer-admission = import ./tests/test-consumer-admission.nix {
           inherit pkgs;
           qtHost = self.packages.${system}.logos-qt-host;
