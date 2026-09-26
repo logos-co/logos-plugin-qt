@@ -64,6 +64,10 @@ class QObject;
 // copy helper. Both are additive and change no private store, bootstrap key,
 // credential adoption, caller identity, or consumer-admission behavior.
 //
+// RAISED 13 -> 14 for tls_tcp sessions between runtimes. They live in the
+// Qt-free runtime only; the Qt runtime refuses the transport and stubs every
+// new function. No private store, bootstrap key, credential adoption or
+// consumer admission changed.
 // RAISED 12 -> 13 for inproc, caller resolvers, runtime delegates and token
 // revocation. Seeding is untouched (TokenManager gains one non-virtual method),
 // the Qt runtime refuses inproc, and only "@op:" keys read as operators.
@@ -116,7 +120,7 @@ class QObject;
 // ModuleProxy in Local mode and asserts the consumer authorizes AS ITSELF.
 #if defined(LOGOS_PROTOCOL_VERSION_MINOR) \
     && (LOGOS_PROTOCOL_VERSION_MAJOR > 0 \
-        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 13))
+        || (LOGOS_PROTOCOL_VERSION_MAJOR == 0 && LOGOS_PROTOCOL_VERSION_MINOR > 14))
 #  error "logos-protocol is newer than the consumer-admission contract this file implements. \
 A private token store is created empty; if the protocol changed how a consumer is seeded, \
 this file and the hosts calling logos::adoptAdmittedConsumer must move in the SAME wave. Review \
