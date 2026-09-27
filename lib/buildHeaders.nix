@@ -74,6 +74,14 @@ in
     # introspection is structurally impossible here.
     crossNoIntrospect = pkgs.stdenv.hostPlatform.isWindows;
 
+    # A qt_remote_plain library is not a Qt plugin, so no platform can introspect
+    # it; plain requires universal/cdylib, which always publish a contract.
+    plainNoIntrospect = (config.transport or "qt_remote") == "qt_remote_plain";
+    # Why the contract path runs, for its log line (the cross wording is unchanged).
+    contractPathReason =
+      if crossNoIntrospect then "Cross build (${pkgs.stdenv.hostPlatform.config})"
+      else "qt_remote_plain module, not a Qt plugin";
+
     # ── Emitter selection ──────────────────────────────────────────────────
     # Contract-first: a module that describes itself in LIDL is generated from
     # that description, on every platform. Introspection is what is left over
@@ -175,7 +183,7 @@ in
       runHook postBuild
     '';
 
-    # ── cross + legacy: LIDL-driven generation through logos-cpp-generator ──
+    # ── cross or plain: LIDL-driven generation through logos-cpp-generator ──
     # Only reachable now for `--api-style lp` (the qt surface goes to the
     # consumer backend above, contract or not — and with no contract it cannot
     # be built under cross at all). `--dep <name>=<file.lidl>` is the
@@ -190,7 +198,11 @@ in
       mkdir -p ./generated_headers
       ${emitterBanner}
 
-    '' + (if !contractIsLidl then ''
+    '' + (if !contractIsLidl && !crossNoIntrospect then ''
+      echo "Error: cannot generate typed headers for qt_remote_plain module '${config.name}': no LIDL contract was passed." >&2
+      echo "  Its library is not a Qt plugin, so the contract is the only description of its API." >&2
+      exit 1
+    '' else if !contractIsLidl then ''
       echo "Error: cannot generate typed headers for module '${config.name}' when cross-compiling to ${pkgs.stdenv.hostPlatform.config}." >&2
       echo "" >&2
       echo "  Native builds recover a module's typed API by loading the compiled" >&2
@@ -211,7 +223,7 @@ in
       { "name": "${config.name}", "version": "${config.version}", "dependencies": [] }
       EOF
 
-      echo "Cross build (${pkgs.stdenv.hostPlatform.config}): generating ${apiStyle}-typed headers for '${config.name}' from LIDL contract"
+      echo "${contractPathReason}: generating ${apiStyle}-typed headers for '${config.name}' from LIDL contract"
       echo "  contract: ${contractLidl}"
 
       # No `|| touch .no-api` here — see the header comment. A generator failure
@@ -332,7 +344,7 @@ in
 
     buildPhase =
       if useQtConsumer then qtConsumerBuildPhase
-      else if crossNoIntrospect then crossBuildPhase
+      else if crossNoIntrospect || plainNoIntrospect then crossBuildPhase
       else nativeLegacyBuildPhase;
 
     installPhase = ''
