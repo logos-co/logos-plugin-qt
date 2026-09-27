@@ -54,7 +54,7 @@ inline size_t qHash(const LogosTransportConfig& cfg, size_t seed = 0) noexcept
 //                            the full LogosTransportConfig.
 //
 // Without the mode-aware comparison, calling
-// `getClient(x, tcp)` and `getClient(x, tcp_ssl)` in Mock mode would
+// `getClient(x, local)` and `getClient(x, qt_remote_plain)` in Mock mode would
 // allocate two clients pointing at functionally identical
 // MockTransportConnections.
 struct LogosAPIClientCacheKey {
@@ -118,8 +118,7 @@ public:
      *
      * `transports` is empty ⇒ use the process-global default (back-compat).
      * Non-empty ⇒ provider publishes on every configured transport
-     * (e.g. a daemon listing both LocalSocket and TCP+SSL so the CLI has
-     * a fast in-process path *and* remote clients have a secure path).
+     * (e.g. both LocalSocket and qt_remote_plain).
      */
     LogosAPI(const QString& module_name,
              LogosTransportSet transports,
@@ -308,19 +307,13 @@ public:
      *
      * Use this when the caller needs to dial one module over a
      * particular protocol without side-effecting the rest of the
-     * process. Canonical case: a CLI that talks only to `core_service`
-     * over tcp_ssl — using `LogosTransportConfigGlobal::setDefault` for
-     * that would also flip the same process's `LogosAPIProvider` into
-     * trying to bind a tcp_ssl server, which the CLI has no cert for.
+     * process: `LogosTransportConfigGlobal::setDefault` would also change
+     * what the same process's `LogosAPIProvider` serves.
      *
      * Cached per (target_module, full LogosTransportConfig) — repeat
      * calls with the same target *and* the same transport return the
-     * same client. The cache key covers every config field that can
-     * distinguish two clients (protocol, host, port, codec, all TLS
-     * settings), via the operator== / qHash defined alongside
-     * LogosTransportConfig, so two callers with different TLS or codec
-     * settings always get separate clients — no risk of silently
-     * reusing an insecure connection where a secure one was asked for.
+     * same client; any field that differs gets a separate one, via the
+     * operator== / qHash defined alongside LogosTransportConfig.
      */
     LogosAPIClient* getClient(const QString& target_module,
                               const LogosTransportConfig& transport) const;
@@ -339,13 +332,11 @@ public:
      * token, regardless of which module is the actual call target.
      * Without an explicit transport it falls through to
      * LogosTransportConfigGlobal::getDefault() (LocalSocket), which
-     * times out 20 s when capability_module is reachable only on TCP
-     * (e.g. CLI on host, daemon in container).
+     * times out when capability_module is served on another transport.
      *
-     * Callers that have read the daemon's per-module advertised
-     * transports (e.g. from logoscore's daemon.json) should register
-     * capability_module's transport here so getClient builds each
-     * LogosAPIClient with the right capability_consumer.
+     * Callers that know capability_module's transport should register
+     * it here so getClient builds each LogosAPIClient with the right
+     * capability_consumer.
      *
      * The setting only affects clients constructed *after* this call
      * — clients already in the cache keep whatever capability transport

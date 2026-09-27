@@ -35,10 +35,7 @@ public:
     /**
      * @param module_name  The module this provider belongs to.
      * @param transports   Optional per-instance transport override. When empty,
-     *                     the provider uses the process-global default. This
-     *                     is what lets a daemon expose `core_service` on
-     *                     TCP/TLS while keeping module-to-module traffic on
-     *                     the local-socket default.
+     *                     the provider uses the process-global default.
      */
     explicit LogosAPIProvider(const QString& module_name,
                               LogosTransportSet transports = {},
@@ -76,7 +73,7 @@ public:
 
     // Install an extra token authorizer, forwarded to the ModuleProxy. Consulted
     // in addition to the built-in issued-token scan, with the call's transport
-    // ("local" | "tcp" | "tcp_ssl") so local_only tokens can be enforced. The
+    // (always "local" since protocol 0.15 removed tcp and tcp_ssl). The
     // daemon backs this with TokenStore::lookupByToken so operator-issued named
     // tokens authorize. Safe to call before or after registerObject(); a
     // validator set before registration is applied when the proxy is created.

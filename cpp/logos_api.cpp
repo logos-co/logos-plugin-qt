@@ -145,9 +145,8 @@ LogosAPIClient* LogosAPI::getClient(const QString& target_module,
     //   - Mock/Local mode: every cfg collapses to one cache slot per
     //     target — switching cfg returns the same MockTransport-backed
     //     client instead of allocating a duplicate.
-    //   - Remote mode: every distinguishing field of cfg matters, so
-    //     two callers with different TLS/codec settings get separate
-    //     clients (no risk of silently reusing an insecure transport).
+    //   - Remote mode: every field of cfg is part of the key, so two
+    //     callers asking for different transports get separate clients.
     //
     // The capability_module transport — used by the client's
     // auto-`requestModule` flow — falls back to the registered
