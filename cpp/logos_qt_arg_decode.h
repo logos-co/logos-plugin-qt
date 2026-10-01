@@ -228,6 +228,10 @@ nlohmann::json dispatchFailedJson(const std::string& origin,
 // QtRO serialization, and the plain wire's map<->JSON).
 QVariant dispatchFailedVariant(const QString& origin, const QString& message);
 
+// The same object for any code in the closed rejection set (unknown_method,
+// invalid_args, dispatch_failed).
+QVariant rejectionVariant(const QString& code, const QString& origin, const QString& message);
+
 } // namespace logos
 
 #endif // LOGOS_QT_ARG_DECODE_H

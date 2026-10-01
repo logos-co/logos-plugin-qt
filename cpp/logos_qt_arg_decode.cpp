@@ -65,8 +65,13 @@ nlohmann::json dispatchFailedJson(const std::string& origin,
 
 QVariant dispatchFailedVariant(const QString& origin, const QString& message)
 {
+    return rejectionVariant(QStringLiteral("dispatch_failed"), origin, message);
+}
+
+QVariant rejectionVariant(const QString& code, const QString& origin, const QString& message)
+{
     QVariantMap m;
-    m.insert(QStringLiteral("code"), QStringLiteral("dispatch_failed"));
+    m.insert(QStringLiteral("code"), code);
     m.insert(QStringLiteral("message"), message);
     m.insert(QStringLiteral("origin"), origin);
     return m;
