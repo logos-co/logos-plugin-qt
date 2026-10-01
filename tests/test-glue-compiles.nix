@@ -11,8 +11,8 @@
 # So: build a real Qt plugin out of the emitted glue, exactly as a module build
 # does -- AUTOMOC over the plugin class, find_package(logos-qt-host), the
 # include/core layout the runtime installs -- with the module-impl C ABI
-# satisfied by a stub instead of a real cdylib. Two probes also run the emitted
-# callMethod: the bounded multi worker pool, and the lidl() built-in.
+# satisfied by a stub instead of a real cdylib. Three probes also run the emitted
+# callMethod: the bounded multi worker pool, the lidl() built-in, and a NULL dispatch.
 #
 # --no-undefined is what makes the LINK meaningful. A MODULE library on ELF
 # happily leaves undefined symbols for load time by default, which would let a
@@ -99,8 +99,12 @@ pkgs.stdenv.mkDerivation {
     }
 
     extern "C" {
-    char* logos_module_dispatch(const char*, const char*) {
+    char* logos_module_dispatch(const char* method, const char*) {
       g_dispatches.fetch_add(1);
+      // NULL, as a backend answers a name it cannot dispatch; the glue decides the reply.
+      if (!std::strcmp(method, "noSuchMethod") || !std::strcmp(method, "listedButNull")
+          || !std::strcmp(method, "name"))
+        return nullptr;
       const int active = g_active.fetch_add(1) + 1;
       int peak = g_peak.load();
       while (active > peak && !g_peak.compare_exchange_weak(peak, active)) {}
@@ -112,7 +116,7 @@ pkgs.stdenv.mkDerivation {
       return out;
     }
     char* logos_module_get_methods(void) {
-      const char reply[] = "[]";
+      const char reply[] = "[{\"name\":\"ping\"},{\"name\":\"listedButNull\"}]";
       auto* out = static_cast<char*>(std::malloc(sizeof(reply)));
       std::memcpy(out, reply, sizeof(reply));
       return out;
@@ -236,6 +240,86 @@ pkgs.stdenv.mkDerivation {
     }
     EOF
 
+    # A NULL dispatch for a name the module does not list must reach the caller
+    # as unknown_method on both paths; it used to be an empty reply, like null.
+    cat > unknown_method_probe.cpp <<'EOF'
+    #include "glue_probe_cdylib_glue.h"
+    #include "logos_async_dispatch.h"
+
+    #include <QCoreApplication>
+    #include <QDebug>
+    #include <QVariantMap>
+
+    #include <chrono>
+    #include <condition_variable>
+    #include <cstdio>
+    #include <memory>
+    #include <mutex>
+
+    static const char* g_self = "unknown_method_probe";
+
+    static int fail(const char* what, const QVariant& got) {
+      QString shown;
+      QDebug(&shown) << got;
+      std::fprintf(stderr, "%s: %s; got %s\n", g_self, what, qPrintable(shown));
+      return 1;
+    }
+
+    struct Completion {
+      std::mutex mu;
+      std::condition_variable cv;
+      bool done = false;
+      QVariant value;
+    };
+
+    // What a caller receives: the direct reply, or a multi glue's completion.
+    static QVariant reply(GlueProbeCdylibProvider& provider, const QString& method) {
+      auto c = std::make_shared<Completion>();
+      provider.setEventListener([c](const QString& event, const QVariantList& data) {
+        if (event != logos::callCompleteEvent() || data.size() != 2) return;
+        std::lock_guard<std::mutex> lk(c->mu);
+        c->value = data.at(1);
+        c->done = true;
+        c->cv.notify_all();
+      });
+      const QVariant direct = provider.callMethod(method, {});
+      if (!direct.toMap().contains(logos::pendingCallKey())) return direct;
+      std::unique_lock<std::mutex> lk(c->mu);
+      if (!c->cv.wait_for(lk, std::chrono::seconds(5), [&] { return c->done; }))
+        return QStringLiteral("<no completion>");
+      return c->value;
+    }
+
+    int main(int argc, char** argv) {
+      QCoreApplication app(argc, argv);
+      g_self = argv[0];
+      GlueProbeCdylibProvider provider;
+
+      const QVariantMap want{
+        {QStringLiteral("code"), QStringLiteral("unknown_method")},
+        {QStringLiteral("message"), QStringLiteral("unknown method 'noSuchMethod'")},
+        {QStringLiteral("origin"), QStringLiteral("glue_probe")},
+      };
+      QVariant got = reply(provider, QStringLiteral("noSuchMethod"));
+      if (got.typeId() != QMetaType::QVariantMap || got.toMap() != want)
+        return fail("an unlisted name the backend answered NULL is not unknown_method", got);
+
+      // A LISTED name answered NULL is a structural failure, not an unknown name.
+      got = reply(provider, QStringLiteral("listedButNull"));
+      if (got.isValid()) return fail("a listed method's NULL reply became a value", got);
+
+      // ModuleProxy answers a bare name() the backend lacks, but only on an empty reply.
+      got = reply(provider, QStringLiteral("name"));
+      if (got.isValid()) return fail("a bare name() was refused instead of left to the host", got);
+
+      got = reply(provider, QStringLiteral("ping"));
+      if (got.toString() != QStringLiteral("ok")) return fail("an ordinary reply changed", got);
+
+      std::printf("%s: ok\n", g_self);
+      return 0;
+    }
+    EOF
+
     cat > CMakeLists.txt <<'EOF'
     cmake_minimum_required(VERSION 3.14)
     project(LogosGlueCompileProbe CXX)
@@ -288,6 +372,19 @@ pkgs.stdenv.mkDerivation {
       target_link_libraries(lidl_builtin_probe_''${variant} PRIVATE
         logos-qt-host::logos_qt_host
         Qt6::Core Qt6::RemoteObjects)
+
+      add_executable(unknown_method_probe_''${variant}
+        unknown_method_probe.cpp
+        ''${variant}/glue_probe_cdylib_glue.cpp
+        ''${variant}/glue_probe_cdylib_glue.h
+        abi_stub.cpp)
+      target_include_directories(unknown_method_probe_''${variant} PRIVATE
+        ''${CMAKE_CURRENT_SOURCE_DIR}/''${variant}
+        ''${LOGOS_QT_HOST_PREFIX}/include/core
+        ''${LOGOS_PROTOCOL_SRC}/cpp)
+      target_link_libraries(unknown_method_probe_''${variant} PRIVATE
+        logos-qt-host::logos_qt_host
+        Qt6::Core Qt6::RemoteObjects)
     endforeach()
 
     add_executable(bounded_dispatch_probe
@@ -311,6 +408,8 @@ pkgs.stdenv.mkDerivation {
     ./build/bounded_dispatch_probe
     ./build/lidl_builtin_probe_single
     ./build/lidl_builtin_probe_multi
+    ./build/unknown_method_probe_single
+    ./build/unknown_method_probe_multi
 
     runHook postBuild
   '';

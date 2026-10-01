@@ -239,6 +239,13 @@
           qtHost = self.packages.${system}.logos-qt-host;
         };
 
+        # A legacy plugin asked for a method it lacks answers a rejection, not
+        # the empty reply a typed caller read as a default.
+        qt-provider-unknown-method = import ./tests/test-qt-provider-unknown-method.nix {
+          inherit pkgs;
+          qtHost = self.packages.${system}.logos-qt-host;
+        };
+
         # Every other check greps the emitted glue as TEXT. This one COMPILES
         # it, against the headers this repo installs, with the module-impl C ABI
         # stubbed. The blind spot it closes is on the record: a multi capture

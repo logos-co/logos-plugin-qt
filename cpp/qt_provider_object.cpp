@@ -358,7 +358,25 @@ QVariant QtProviderObject::callMethod(const QString& methodName, const QVariantL
     if (methodIndex == -1) {
         qWarning() << "[LogosProviderObject] QtProviderObject: method not found:" << methodName
                     << "with" << args.size() << "arguments";
-        return QVariant();
+        // ModuleProxy answers a bare name()/version() the plugin lacks, on an empty reply.
+        if (args.isEmpty()
+            && (methodName == QLatin1String("name") || methodName == QLatin1String("version")))
+            return QVariant();
+        // An empty reply here was indistinguishable from a method returning null.
+        QList<int> arities;
+        for (int i = 0; i < metaObject->methodCount(); ++i) {
+            const QMetaMethod candidate = metaObject->method(i);
+            if (candidate.name() == methodName && !arities.contains(candidate.parameterCount()))
+                arities.append(candidate.parameterCount());
+        }
+        if (arities.isEmpty()) {
+            return logos::rejectionVariant(QStringLiteral("unknown_method"), providerName(),
+                                           QStringLiteral("unknown method '%1'").arg(methodName));
+        }
+        const QString message = arities.size() == 1
+            ? QStringLiteral("expected %1 arguments, got %2").arg(arities.first()).arg(args.size())
+            : QStringLiteral("no overload of '%1' takes %2 arguments").arg(methodName).arg(args.size());
+        return logos::rejectionVariant(QStringLiteral("invalid_args"), providerName(), message);
     }
 
     QMetaMethod method = metaObject->method(methodIndex);
