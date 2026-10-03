@@ -20,10 +20,9 @@ LogosAPIProvider::LogosAPIProvider(const QString& module_name,
     , m_qtProviderObject(nullptr)
 {
     // Helper: defer-construct one host and only retain it if the
-    // factory actually returned something. createHost() can return
-    // nullptr — e.g. PlainTransportHost::start() failure (TCP bind,
-    // SSL cert load) — and we don't want to leave a null entry that
-    // would crash the publish/unpublish paths later.
+    // factory actually returned something. createHost() returns nullptr
+    // for a transport this runtime refuses (inproc, tls_tcp, the removed
+    // tcp and tcp_ssl); a null entry would crash publish/unpublish later.
     auto pushHost = [&](auto&& host, const char* label) {
         if (host) {
             m_transports.push_back(std::forward<decltype(host)>(host));
@@ -39,8 +38,7 @@ LogosAPIProvider::LogosAPIProvider(const QString& module_name,
         pushHost(LogosTransportFactory::createHost(m_registryUrl), "(default)");
     } else {
         // One host per configured transport — lets a single provider serve
-        // its object on several endpoints simultaneously (local-socket +
-        // TCP, TCP + TCP+SSL, etc.).
+        // its object on several endpoints simultaneously.
         for (const auto& cfg : transports)
             pushHost(LogosTransportFactory::createHost(cfg, m_registryUrl), "(per-cfg)");
     }
