@@ -24,7 +24,7 @@ let
     }
   '';
 
-  mkCase = { apiStyle, contractLidl, qtGenerator }:
+  mkCase = { apiStyle, contractLidl, qtGenerator, transport ? "qt_remote" }:
     (buildHeaders {
       inherit pkgs apiStyle contractLidl qtGenerator;
       src = ./.;
@@ -32,6 +32,7 @@ let
         name = "demo_module";
         version = "1.0.0";
         description = "routing fixture";
+        inherit transport;
       };
       pluginLib = stub "plugin";
       logosSdk = stub "sdk";
@@ -64,6 +65,14 @@ let
       apiStyle = "qt";
       contractLidl = "${contract}";
       qtGenerator = null;
+    };
+    # A plain module's library is not a Qt plugin, so even natively its lp
+    # wrapper must come from the contract.
+    lp-plain = mkCase {
+      apiStyle = "lp";
+      contractLidl = "${contract}";
+      qtGenerator = stub "qtgen";
+      transport = "qt_remote_plain";
     };
   };
 
@@ -137,10 +146,21 @@ pkgs.runCommand "logos-plugin-qt-headers-emitter-routing-test" { } ''
     -- \
     '^[[:space:]]*logos-qt-generator '
 
+  # 5. Plain: the contract path, never the introspection script.
+  check lp-plain ${caseFile "lp-plain"} \
+    'emitter=lp' \
+    '^[[:space:]]*logos-cpp-generator --metadata ' \
+    '--dep demo_module=' \
+    'qt_remote_plain module, not a Qt plugin' \
+    -- \
+    'generate-module-headers.sh' \
+    'PLUGIN_FILE'
+
   # Every case must announce an emitter — an unlabelled build is the state this
   # whole test exists to prevent.
   for f in ${caseFile "qt-with-contract"} ${caseFile "qt-no-contract"} \
-           ${caseFile "lp-with-contract"} ${caseFile "qt-contract-but-no-generator"}; do
+           ${caseFile "lp-with-contract"} ${caseFile "qt-contract-but-no-generator"} \
+           ${caseFile "lp-plain"}; do
     if ! grep -q 'buildHeaders: emitter=' "$f"; then
       echo "FAIL: a buildPhase carries no emitter banner: $f" >&2
       failures=$((failures + 1))
