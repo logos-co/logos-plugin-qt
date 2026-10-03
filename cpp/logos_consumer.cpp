@@ -100,6 +100,48 @@ logos::ConsumerIdentity logos::admitConsumer(const QString& identity,
     return ConsumerIdentity{api, credential};
 }
 
+logos::ConsumerIdentity logos::adoptAdmittedConsumer(const QString& identity,
+                                                     const QString& credential,
+                                                     QObject* parent)
+{
+    if (identity.isEmpty() || credential.isEmpty()) {
+        qWarning() << "logos::adoptAdmittedConsumer: needs a name and the credential"
+                      " capability_module minted for it";
+        return {};
+    }
+    LogosAPI* api = LogosAPI::forIdentity(identity, parent);
+    if (!api) {
+        qWarning() << "logos::adoptAdmittedConsumer: could not give" << identity
+                   << "a token store of its own";
+        return {};
+    }
+    // Refuses the host's anchor, so a credential can never elevate the identity.
+    if (!TokenManager::adoptCredentialFor(identity, credential)) {
+        qWarning() << "logos::adoptAdmittedConsumer: could not install" << identity
+                   << "'s credential";
+        delete api;
+        return {};
+    }
+    return ConsumerIdentity{api, credential};
+}
+
+bool logos::replaceConsumerCredential(LogosAPI* consumerApi, const QString& credential)
+{
+    const QString identity = consumerApi ? consumerApi->moduleName() : QString();
+    if (identity.isEmpty() || credential.isEmpty() || !TokenManager::isIsolated(identity)) {
+        qWarning() << "logos::replaceConsumerCredential:" << identity
+                   << "was never adopted, or the credential is empty";
+        return false;
+    }
+    TokenManager::resetIdentity(identity);
+    if (!TokenManager::adoptCredentialFor(identity, credential)) {
+        qWarning() << "logos::replaceConsumerCredential: could not install the new"
+                      " credential for" << identity << "- it is now locked out";
+        return false;
+    }
+    return true;
+}
+
 QString logos::reissueConsumerCredential(LogosAPI* consumerApi, LogosAPI* hostApi)
 {
     if (!consumerApi) return {};
