@@ -98,16 +98,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1791031464,
-        "narHash": "sha256-c1/5v39SJwqT2gAEGtEqXZ9B/TRVcow9gJ+zBph28w8=",
+        "lastModified": 1791031588,
+        "narHash": "sha256-ica+yx0KcFi31E16RhS2aCzyRvaodw60OLf7GUzFNJE=",
         "owner": "logos-co",
         "repo": "logos-protocol",
-        "rev": "9076d2b8bb4036ceac9bd38de428434449496b55",
+        "rev": "7a68a268a24e24ec358818ddd2efe0ae9e3eb0be",
         "type": "github"
       },
       "original": {
         "owner": "logos-co",
-        "ref": "feat/drop-legacy-mode",
+        "ref": "feat/peering",
         "repo": "logos-protocol",
         "type": "github"
       }
