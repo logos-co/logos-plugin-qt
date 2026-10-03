@@ -70,9 +70,9 @@ in
     pluginFilename = common.getPluginFilename pkgs config.name;
     libExt = common.getLibExtension pkgs;
 
-    # A Linux (or Darwin) builder cannot dlopen a Windows PE, so plugin
-    # introspection is structurally impossible here.
-    crossNoIntrospect = pkgs.stdenv.hostPlatform.isWindows;
+    # A builder cannot dlopen a plugin it cannot execute (a Windows PE, an
+    # Android ELF), so plugin introspection is structurally impossible here.
+    crossNoIntrospect = !pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform;
 
     # A qt_remote_plain library is not a Qt plugin, so no platform can introspect
     # it; plain requires universal/cdylib, which always publish a contract.
