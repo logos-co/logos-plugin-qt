@@ -148,6 +148,7 @@ pkgs.stdenv.mkDerivation {
     #include "logos_async_dispatch.h"
 
     #include <QCoreApplication>
+    #include <QSet>
     #include <QVariantMap>
 
     #include <chrono>
@@ -170,9 +171,11 @@ pkgs.stdenv.mkDerivation {
       });
 
       constexpr int kCalls = 6;
+      QSet<QString> ids;
       for (int i = 0; i < kCalls; ++i) {
         const QVariant reply = provider.callMethod(QStringLiteral("ping"), {});
         if (!reply.toMap().contains(logos::pendingCallKey())) return 10;
+        ids.insert(reply.toMap().value(logos::pendingCallKey()).toString());
       }
 
       std::unique_lock<std::mutex> lk(mu);
@@ -182,7 +185,14 @@ pkgs.stdenv.mkDerivation {
 
       // --max-workers 2 means a burst queues, reaches exactly two concurrent
       // handlers, and still delivers every completion.
-      return bounded_dispatch_probe_peak() == 2 ? 0 : 12;
+      if (bounded_dispatch_probe_peak() != 2) return 12;
+
+      // A reloaded module is a new provider. Its call ids must not repeat the old
+      // one's, or a consumer still holding such a completion hands it to the new call.
+      GlueProbeCdylibProvider reloaded;
+      const QString id = reloaded.callMethod(QStringLiteral("ping"), {})
+                             .toMap().value(logos::pendingCallKey()).toString();
+      return !id.isEmpty() && !ids.contains(id) ? 0 : 13;
     }
     EOF
 

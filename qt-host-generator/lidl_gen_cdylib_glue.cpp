@@ -70,6 +70,7 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi, int maxWo
         s << "#include <cstdint>\n";
         s << "#include <QThread>\n";
         s << "#include <QThreadPool>\n";
+        s << "#include <QUuid>\n";
     }
     s << "#include <nlohmann/json.hpp>\n\n";
 
@@ -102,6 +103,10 @@ QString lidlMakeCdylibGlueHeader(const ModuleDecl& module, bool multi, int maxWo
     s << "    static void emitTrampoline(const char* eventName, const char* dataJson, void* userData);\n";
     if (multi) {
         s << "    std::atomic<std::uint64_t> m_callCounter{0};  // unique deferred-call ids\n";
+        // A reloaded module counts from 0 again, and a consumer still holding a
+        // completion of the old instance would take it for the new call.
+        s << "    const QString m_callIdPrefix = QStringLiteral(\"lc-%1-\").arg(\n";
+        s << "        QUuid::createUuid().toString(QUuid::Id128));  // unique per instance\n";
         s << "    QThreadPool m_workerPool;  // bounded, reusable dispatch workers\n";
     }
     s << "};\n\n";
@@ -370,7 +375,7 @@ QString lidlMakeCdylibGlueSource(const ModuleDecl& module,
             s << "};\n";
             s << "    const bool isVoidMethod = kVoidMethods.contains(methodName);\n";
         }
-        s << "    const QString callId = QStringLiteral(\"lc-%1\").arg(\n";
+        s << "    const QString callId = m_callIdPrefix + QString::number(\n";
         s << "        static_cast<qulonglong>(m_callCounter.fetch_add(1, std::memory_order_relaxed)));\n";
         s << "    EventCallback eventCb = m_eventCallback;  // copied for the worker\n";
         // THE PULL IS HERE, ON THE DISPATCH THREAD, and this placement is the

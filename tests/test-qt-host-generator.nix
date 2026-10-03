@@ -261,6 +261,11 @@ pkgs.runCommand "logos-qt-host-generator-test" {
     || { echo "multi header missing the async-dispatch include"; exit 1; }
   grep -q "m_callCounter" $hm \
     || { echo "multi header missing the deferred-call id counter"; exit 1; }
+  # Ids must not repeat across instances: a reloaded module counts from 0 again.
+  grep -q "QUuid::createUuid().toString(QUuid::Id128)" $hm \
+    || { echo "multi header has no per-instance call-id prefix"; exit 1; }
+  grep -q "const QString callId = m_callIdPrefix + QString::number(" $cm \
+    || { echo "multi source does not prefix its call ids"; exit 1; }
   # A bounded pool of real QThreads, not one new thread per request and not raw
   # std::threads: outbound module calls need a Qt event dispatcher, while the
   # configured cap prevents a request burst from exhausting OS thread pipes.
