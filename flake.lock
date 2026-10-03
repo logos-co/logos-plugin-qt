@@ -98,16 +98,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1791031453,
-        "narHash": "sha256-DBB3g9A3DU3y3hLYs/l8+0+4e390y8ytrR/tOt01yrQ=",
+        "lastModified": 1791031462,
+        "narHash": "sha256-P2qfcTT6SGkmhcdFNAdJ1ubRVk+0hXUHggjkfEL8/zw=",
         "owner": "logos-co",
         "repo": "logos-protocol",
-        "rev": "864bce4600470d619efd81fa7d31aa785a4a1c30",
+        "rev": "d9598fa831781e26cc2430c48bc7585722b90699",
         "type": "github"
       },
       "original": {
         "owner": "logos-co",
-        "ref": "codex/qt-remote-plain",
+        "ref": "feat/plain-local-inproc",
         "repo": "logos-protocol",
         "type": "github"
       }
