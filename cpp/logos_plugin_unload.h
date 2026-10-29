@@ -26,9 +26,10 @@
 //
 // The GRACE PERIOD is deliberately NOT a constant here. It is a policy each
 // host owns, because each host is carved out of a different hard-kill budget:
-// logos_host has 5s from the container before SIGKILL, ui-host has 3s from
-// ViewModuleHost::stop() before kill(). Passing it in is what keeps one
-// algorithm serving two budgets.
+// logos_host has 12s from the container before SIGKILL, ui-host has 12s from
+// ViewModuleHost::stop() before kill(). Both spend 10s of that on the module
+// today, but the parents that own the windows differ, and passing the period
+// in is what keeps one algorithm serving two budgets.
 
 class QObject;
 
