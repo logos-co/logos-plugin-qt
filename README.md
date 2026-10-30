@@ -1,9 +1,10 @@
 # logos-plugin-qt
 
-Everything specific to running a Logos module as a **Qt 6 plugin**, in one repo:
-the build logic logos-module-builder delegates to, and the runtime that build
-produces plugins against. Keeping both here is what lets the plugin technology
-be swapped without touching the module builder or individual modules.
+The compatibility Qt 6 plugin runtime plus the module build backend used by
+`logos-module-builder`. The backend now has two paths: the existing Qt plugin
+for `qt_remote`, and a Qt-free native library for `qt_remote_plain`. Keeping
+both behind the same build function lets a module switch with one metadata
+field.
 
 ## Outputs
 
@@ -12,6 +13,10 @@ be swapped without touching the module builder or individual modules.
 | `lib` / `rawLib` | The Nix build functions (`buildPlugin`, `generate`, `buildHeaders`, `devShellInputs`, plus `common`). `rawLib` takes its Logos deps as arguments; `lib` pre-fills them from this flake. |
 | `packages.<sys>.logos-qt-host` | The **Qt host runtime** a plugin links: `LogosAPI`, `LogosAPIProvider`, `LogosProviderBase`, the legacy `QtProviderObject` adapter, and `core/interface.h`. Static library, headers, and a `find_package(logos-qt-host)` config. |
 | `packages.<sys>.logos-qt-host-generator` | Emits the Qt plugin glue around a cdylib module's C ABI (`<name>_cdylib_glue.{h,cpp}`) from its LIDL contract. |
+
+`buildPlugin` always installs `<name>_plugin.metadata.json` beside the module
+library. The Qt-free liblogos parent discovers modules from this sidecar;
+current Qt plugins still embed the same metadata for compatibility.
 
 `logos-qt-host` is also the `default` package.
 

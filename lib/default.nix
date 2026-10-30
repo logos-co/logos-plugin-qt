@@ -40,12 +40,17 @@ in {
     lidlContractInstall ? "",
   }:
   let
+    isPlain = (config.transport or "qt_remote") == "qt_remote_plain";
     commonArgs = {
       pname = "logos-${config.name}-module";
       version = config.version;
-      nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
-      buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
-      cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      nativeBuildInputs = (if isPlain then [ pkgs.cmake pkgs.ninja pkgs.pkg-config ]
+                           else common.commonNativeBuildInputs pkgs) ++ extraNativeBuildInputs;
+      buildInputs = (if isPlain then [ ] else common.commonBuildInputs pkgs)
+                    ++ extraBuildInputs;
+      cmakeFlags = (if isPlain then [ "-GNinja" ]
+                    else common.commonCmakeFlags { inherit logosModule; })
+                   ++ extraCmakeFlags;
       # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
       # point it at its own root, which shipped a second copy of
       # LogosModule.cmake; the caller only overrode it when the module itself
@@ -54,9 +59,9 @@ in {
       # passes this in extraEnv. With no default, a caller that forgets gets a
       # loud FATAL_ERROR from the module's CMakeLists instead of a build against
       # whatever this repo happens to contain.
-      env = {
+      env = (lib.optionalAttrs (!isPlain) {
         LOGOS_MODULE_ROOT = "${logosModule}";
-      } // extraEnv;
+      }) // extraEnv;
       meta = with lib; {
         description = config.description;
         platforms = platforms.unix ++ platforms.windows;
@@ -90,12 +95,17 @@ in {
     lidlContractInstall ? "",
   }:
   let
+    isPlain = (config.transport or "qt_remote") == "qt_remote_plain";
     commonArgs = {
       pname = "logos-${config.name}-module";
       version = config.version;
-      nativeBuildInputs = common.commonNativeBuildInputs pkgs ++ extraNativeBuildInputs;
-      buildInputs = common.commonBuildInputs pkgs ++ extraBuildInputs;
-      cmakeFlags = common.commonCmakeFlags { inherit logosModule; } ++ extraCmakeFlags;
+      nativeBuildInputs = (if isPlain then [ pkgs.cmake pkgs.ninja pkgs.pkg-config ]
+                           else common.commonNativeBuildInputs pkgs) ++ extraNativeBuildInputs;
+      buildInputs = (if isPlain then [ ] else common.commonBuildInputs pkgs)
+                    ++ extraBuildInputs;
+      cmakeFlags = (if isPlain then [ "-GNinja" ]
+                    else common.commonCmakeFlags { inherit logosModule; })
+                   ++ extraCmakeFlags;
       # LOGOS_MODULE_BUILDER_ROOT is NOT defaulted here. This backend used to
       # point it at its own root, which shipped a second copy of
       # LogosModule.cmake; the caller only overrode it when the module itself
@@ -104,9 +114,9 @@ in {
       # passes this in extraEnv. With no default, a caller that forgets gets a
       # loud FATAL_ERROR from the module's CMakeLists instead of a build against
       # whatever this repo happens to contain.
-      env = {
+      env = (lib.optionalAttrs (!isPlain) {
         LOGOS_MODULE_ROOT = "${logosModule}";
-      } // extraEnv;
+      }) // extraEnv;
       meta = with lib; {
         description = config.description;
         platforms = platforms.unix ++ platforms.windows;
